@@ -19,6 +19,7 @@ import { Backlink, Folder, NoteDetails, SnapshotInfo } from '../api/types';
 import AttachmentsModal from '../components/AttachmentsModal';
 import ActionSheet, { ActionSheetItem } from '../components/ActionSheet';
 import { useDialog } from '../components/DialogProvider';
+import { buildShareUrl } from '../utils/url';
 import { useSettings } from '../context/SettingsContext';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { dateLocale, Locale, useI18n } from '../i18n';
@@ -254,7 +255,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
             onPress: async () => {
               try {
                 const created = await client.createShare(note.id, {});
-                const url = activeProfile.baseUrl + (created.url ?? '');
+                const url = buildShareUrl(created, activeProfile.baseUrl);
                 try {
                   await Share.share({ message: url });
                 } catch {
@@ -267,7 +268,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
           },
         ]);
       } else {
-        const url = activeProfile.baseUrl + (status.url ?? '');
+        const url = buildShareUrl(status, activeProfile.baseUrl);
         dialog.alert(t('editor.shareActiveTitle'), url, [
           { text: t('common.close'), style: 'cancel' },
           {

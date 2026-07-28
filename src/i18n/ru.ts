@@ -85,6 +85,11 @@ export const ru = {
   'settings.edit': 'Изменить',
   'settings.deleteProfile': 'Удалить сервер',
   'settings.switchProfile': 'Переключиться',
+  'settings.security': 'Безопасность',
+  'settings.appLock': 'Блокировка приложения',
+  'settings.appLockHint': 'Запрашивать биометрию или код при открытии и после сворачивания',
+  'settings.appLockUnavailable': 'Биометрия не настроена на этом устройстве',
+  'lock.button': 'Разблокировать',
 
   // Список заметок
   'list.titleWorkspace': 'Заметки · {workspace}',

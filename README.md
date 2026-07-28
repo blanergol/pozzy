@@ -26,6 +26,7 @@ Pozzy talks to your own Poznote server over its REST API (HTTP Basic Auth + `X-U
 - `X-User-ID` auto-detected from your credentials (`GET /users/me`); manual override for admins
 - Light / dark / system theme, persisted
 - **Two UI languages: English and Russian** — auto-detected from the system locale, with a manual override in Settings
+- **App lock with biometrics or device PIN** (Face ID / fingerprint / system passcode), relocks after 30 s in background (native only)
 
 **Notes**
 - List with instant search, workspace and folder filters, pull-to-refresh, and sort by last update

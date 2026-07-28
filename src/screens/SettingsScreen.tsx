@@ -7,6 +7,7 @@ import {
   ScrollView,
   Share,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -19,7 +20,9 @@ import { describeError, normalizeBaseUrl, PoznoteClient } from '../api/client';
 import { BackupFile, GitSyncStatus, SharedItem, SystemInfo } from '../api/types';
 import ActionSheet, { ActionSheetItem } from '../components/ActionSheet';
 import { useDialog } from '../components/DialogProvider';
+import { buildShareUrl } from '../utils/url';
 import { useSettings } from '../context/SettingsContext';
+import { useAppLock } from '../security/AppLock';
 import { ServerProfile } from '../storage/settings';
 import { ThemeColors, ThemeMode, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { LanguageMode, useI18n } from '../i18n';
@@ -58,6 +61,18 @@ export default function SettingsScreen({ navigation }: Props) {
   const styles = useThemedStyles(createStyles, colors);
   const dialog = useDialog();
   const { t } = useI18n();
+  const appLock = useAppLock();
+
+  const handleToggleAppLock = async (value: boolean) => {
+    if (value) {
+      const ok = await appLock.enable();
+      if (!ok) {
+        dialog.alert(t('settings.appLock'), t('settings.appLockUnavailable'));
+      }
+    } else {
+      await appLock.disable();
+    }
+  };
 
   // Форма сервера: null = скрыта, 'new' = новый, profile = редактирование
   const [formState, setFormState] = useState<'hidden' | 'new' | ServerProfile>(
@@ -287,8 +302,12 @@ export default function SettingsScreen({ navigation }: Props) {
   };
 
   const handleShareLink = (item: SharedItem) => {
-    const url = typeof item.url === 'string' && activeProfile ? activeProfile.baseUrl + item.url : null;
-    if (url) Share.share({ message: url }).catch(() => {});
+    if (typeof item.url !== 'string' || !activeProfile) return;
+    const url = buildShareUrl(
+      { url: item.url, url_query: typeof item.url_query === 'string' ? item.url_query : undefined },
+      activeProfile.baseUrl,
+    );
+    Share.share({ message: url }).catch(() => {});
   };
 
   const formVisible = formState !== 'hidden';
@@ -483,6 +502,27 @@ export default function SettingsScreen({ navigation }: Props) {
             })}
           </View>
         </View>
+
+        {/* Безопасность (только нативные платформы) */}
+        {Platform.OS !== 'web' && appLock.isReady ? (
+          <>
+            <Text style={styles.sectionTitle}>{t('settings.security')}</Text>
+            <View style={styles.card}>
+              <View style={styles.rowBetween}>
+                <View style={styles.securityBody}>
+                  <Text style={styles.rowLabel}>{t('settings.appLock')}</Text>
+                  <Text style={styles.securityHint}>{t('settings.appLockHint')}</Text>
+                </View>
+                <Switch
+                  value={appLock.enabled}
+                  onValueChange={handleToggleAppLock}
+                  trackColor={{ false: colors.border, true: colors.accent }}
+                  thumbColor={colors.accentText}
+                />
+              </View>
+            </View>
+          </>
+        ) : null}
 
         {/* Секции активного сервера */}
         {showSections ? (
@@ -685,6 +725,8 @@ const createStyles = (colors: ThemeColors) =>
       paddingVertical: 6,
     },
     rowLabel: { fontSize: 15, color: colors.text },
+    securityBody: { flex: 1, marginRight: 12 },
+    securityHint: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
     rowValue: { fontSize: 15, color: colors.textFaint },
     rowValueSmall: { fontSize: 13, color: colors.textFaint, maxWidth: '60%' },
     buttonRow: { flexDirection: 'row', gap: 24, marginTop: 4 },

@@ -41,3 +41,6 @@ yarn-error.*
 /android
 .idea
 /scripts
+# local build tooling
+.sdk/
+android/

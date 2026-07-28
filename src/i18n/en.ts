@@ -83,6 +83,11 @@ export const en: Record<TranslationKey, string> = {
   'settings.edit': 'Edit',
   'settings.deleteProfile': 'Delete server',
   'settings.switchProfile': 'Switch',
+  'settings.security': 'Security',
+  'settings.appLock': 'App lock',
+  'settings.appLockHint': 'Ask for biometrics or PIN on open and after minimizing',
+  'settings.appLockUnavailable': 'Biometrics is not set up on this device',
+  'lock.button': 'Unlock',
 
   'list.titleWorkspace': 'Notes · {workspace}',
   'list.search': 'Search notes',

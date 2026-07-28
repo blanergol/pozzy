@@ -9,6 +9,7 @@ import { SettingsProvider, useSettings } from './src/context/SettingsContext';
 import { useTheme } from './src/theme/ThemeContext';
 import { useI18n } from './src/i18n';
 import { DialogProvider } from './src/components/DialogProvider';
+import { AppLockProvider, AppLockScreen } from './src/security/AppLock';
 import { RootStackParamList } from './src/navigation/types';
 import SettingsScreen from './src/screens/SettingsScreen';
 import NotesListScreen from './src/screens/NotesListScreen';
@@ -94,7 +95,10 @@ function ThemedNavigation() {
   return (
     <NavigationContainer theme={navTheme}>
       <DialogProvider>
-        <RootNavigator />
+        <AppLockProvider>
+          <RootNavigator />
+          <AppLockScreen />
+        </AppLockProvider>
       </DialogProvider>
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </NavigationContainer>
