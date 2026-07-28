@@ -139,6 +139,14 @@ While building the client we found several places where Poznote's OpenAPI spec d
 
 Issues and pull requests are welcome. Please run `npx tsc --noEmit` and the E2E suite before submitting a PR.
 
+## Support the project
+
+Pozzy is free and open source. If it saves you time, you can support development with a USDT transfer on the TON network (no memo required):
+
+```
+UQBC2cFoZ94jsJil-AhmL2HalKZoRikv50UVtzAdSRj05qCk
+```
+
 ## Acknowledgments
 
 - [Poznote](https://github.com/timothepoznanski/poznote) — the self-hosted note-taking server this client is built for (all credit for the API and server to its authors).
