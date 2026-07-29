@@ -3,6 +3,8 @@ import { getLocales } from 'expo-localization';
 import { ru, TranslationKey } from './ru';
 import { en } from './en';
 
+export type { TranslationKey };
+
 export type LanguageMode = 'system' | 'ru' | 'en';
 export type Locale = 'ru' | 'en';
 

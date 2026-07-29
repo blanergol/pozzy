@@ -42,9 +42,61 @@ Pozzy talks to your own Poznote server over its REST API (HTTP Basic Auth + `X-U
 
 **Organization**
 - Folders: note counts, create, rename, empty, delete
-- Trash: restore, permanent delete, empty
-- Workspaces: quick switcher in the notes list
+- Workspaces: quick switcher in the notes list, plus create / rename / delete from the same dialog
+- Trash: restore (single or all at once), permanent delete, empty
 - Notifications (reminder alerts) with an unread badge
+- **Bottom navigation: Notes, Folders, and AI Agent tabs**
+
+**AI Chat**
+- Chat tab backed by any OpenAI-compatible API (OpenAI, OpenRouter, Ollama, …)
+- Base URL, API key, and model are configured in **Settings → AI chat**; the whole feature can be disabled there
+- **Agent mode with tools**: the assistant works with your notes via function calling over the same OpenAI-compatible API (30 tools, see the catalog below)
+- Chat history (including tool calls) is persisted on-device and survives app restarts; a header button clears it
+- **Two-level memory**: recent messages are sent as-is (short-term), older conversation is compacted by the LLM into a running summary that is injected into the system prompt (long-term); the summary is recomputed only after enough new material accumulates
+- Destructive and irreversible actions require explicit user approval in the chat UI
+- **Guardrails**: approval for destructive tools, batch caps (50 by default), per-request tool-call budget (25), agent step limit, loop detection (3 identical calls), tool-result truncation (8k chars), 60s request timeout
+- The whole AI feature can be turned off with a single switch in Settings
+
+<details>
+<summary><strong>AI chat tools catalog</strong></summary>
+
+**Reading**
+- `search_notes` — search notes by text with folder/workspace filters (compact list)
+- `get_note` — full note content by id or title
+- `get_recent_notes` — recently updated notes
+- `list_folders` — folders with note counts
+- `list_workspaces` — available workspaces
+- `list_uncategorized_notes` — notes without a folder
+- `get_note_stats` — totals, favorites, counts by folder/workspace, trash count
+- `get_backlinks` — notes linking to a given note
+- `list_trash` — notes in trash
+
+**Single-note writes**
+- `create_note` — create a note (title, content, tags, folder, workspace)
+- `update_note` — change title/content/tags of a note
+- `append_to_note` — append text to a note
+- `search_and_replace` — replace exact text inside a note
+- `add_tags` — add tags keeping existing ones
+- `toggle_favorite` — toggle favorite
+- `duplicate_note` — copy a note
+- `convert_note_format` — Markdown ↔ HTML conversion
+- `move_note_to_folder` / `move_note_to_workspace` — relocate a note
+- `merge_notes` — combine several notes into one (sources go to trash)
+- `restore_note` — restore from trash
+- `delete_note` 🔒 — move a note to trash
+
+**Folders & batch operations**
+- `create_folder` / `rename_folder` — folder management
+- `move_notes_by_query` — move all matching notes to a folder (with date filters)
+- `tag_notes_by_query` — add/replace tags on all matching notes
+- `empty_folder` 🔒 — move all folder's notes to trash
+- `delete_folder` 🔒 — delete a folder (notes become uncategorized)
+- `delete_notes_by_query` 🔒 — move all matching notes to trash
+- `empty_trash` 🔒 — permanently delete everything in trash
+
+🔒 = requires explicit user approval before execution. Batch tools are capped (50 by default) and return a report of affected notes.
+
+</details>
 
 **Server management (in Settings)**
 - Server version and update check
@@ -99,20 +151,24 @@ The E2E suite (`scripts/e2e.js`) drives the real app in a browser via Playwright
 ## Project structure
 
 ```
-App.tsx                              — navigation (themed header), app entry
+App.tsx                              — navigation (root stack + bottom tabs: Notes / Folders / AI Chat), app entry
 src/theme/ThemeContext.tsx           — light/dark palettes, system theme
 src/i18n/                            — ru/en dictionaries + provider (system locale, persisted)
 src/api/client.ts                    — Poznote HTTP client (Basic Auth + X-User-ID), 100 API calls
+src/api/chat.ts                      — OpenAI-compatible chat client (/chat/completions + function calling)
+src/chat/agent.ts                    — agent loop (model ↔ tools, step limit, approval)
+src/chat/tools.ts                    — Poznote tools for the AI chat (search/read/create/update/move/delete)
 src/api/types.ts                     — API types (matching real server responses)
 src/context/SettingsContext.tsx      — server profiles, active server, theme, workspace
 src/storage/settings.ts              — persistence (AsyncStorage): servers, theme, workspace
 src/components/ActionSheet.tsx       — bottom-sheet menus (Alert is limited on Android)
 src/components/DialogProvider.tsx    — cross-platform dialogs (RN-web Alert is a no-op)
 src/components/AttachmentsModal.tsx  — note attachments
-src/screens/SettingsScreen.tsx       — servers, theme, system, Git Sync, backups, share links
+src/screens/SettingsScreen.tsx       — servers, theme, system, Git Sync, backups, share links, AI chat
 src/screens/NotesListScreen.tsx      — notes list (search, filters, multi-select, badge)
 src/screens/NoteEditorScreen.tsx     — editor (edit-lock, actions, snapshots, backlinks)
 src/screens/FoldersScreen.tsx        — folders
+src/screens/ChatScreen.tsx           — AI chat (OpenAI-compatible API)
 src/screens/TrashScreen.tsx          — trash
 src/screens/NotificationsScreen.tsx  — notifications (reminders)
 scripts/mock-server.js               — stateful Poznote API mock (port 8901)

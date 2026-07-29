@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useFocusEffect } from '@react-navigation/native';
+import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { CompositeScreenProps, useFocusEffect } from '@react-navigation/native';
 import { describeError } from '../api/client';
 import { Folder, FolderCounts } from '../api/types';
 import ActionSheet, { ActionSheetItem } from '../components/ActionSheet';
@@ -20,9 +21,15 @@ import { useDialog } from '../components/DialogProvider';
 import { useSettings } from '../context/SettingsContext';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { useI18n } from '../i18n';
-import { RootStackParamList } from '../navigation/types';
+import { MainTabParamList, RootStackParamList } from '../navigation/types';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Folders'>;
+type Props = CompositeScreenProps<
+  BottomTabScreenProps<MainTabParamList, 'Folders'>,
+  NativeStackScreenProps<RootStackParamList>
+>;
+
+// Пагинация списка: показываем порциями, догружаем при скролле
+const PAGE_SIZE = 10;
 
 export default function FoldersScreen({ navigation }: Props) {
   const { client, workspace } = useSettings();
@@ -32,6 +39,8 @@ export default function FoldersScreen({ navigation }: Props) {
   const { t } = useI18n();
 
   const [folders, setFolders] = useState<Folder[]>([]);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [counts, setCounts] = useState<FolderCounts>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -53,6 +62,7 @@ export default function FoldersScreen({ navigation }: Props) {
           client.getFolderCounts(ws),
         ]);
         setFolders(folderList);
+        setVisibleCount(PAGE_SIZE);
         setCounts(folderCounts);
         setError(null);
       } catch (e) {
@@ -71,6 +81,16 @@ export default function FoldersScreen({ navigation }: Props) {
     }, [load]),
   );
 
+  // Плавная догрузка следующей порции при скролле
+  const handleLoadMore = useCallback(() => {
+    if (isLoadingMore || visibleCount >= folders.length) return;
+    setIsLoadingMore(true);
+    setTimeout(() => {
+      setVisibleCount((c) => c + PAGE_SIZE);
+      setIsLoadingMore(false);
+    }, 250);
+  }, [isLoadingMore, visibleCount, folders.length]);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       title: workspace ? t('folders.titleWorkspace', { workspace }) : t('nav.folders'),
@@ -81,6 +101,7 @@ export default function FoldersScreen({ navigation }: Props) {
             setNameModal({ mode: 'create' });
           }}
           hitSlop={8}
+          style={styles.headerButton}
           accessibilityLabel="add-folder"
         >
           <Ionicons name="add" size={26} color={colors.accent} />
@@ -177,7 +198,7 @@ export default function FoldersScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.row}
         onPress={() =>
-          navigation.push('NotesList', { folderId: item.id, folderName: item.name })
+          navigation.navigate('FolderNotes', { folderId: item.id, folderName: item.name })
         }
         onLongPress={() => handleFolderActions(item)}
         activeOpacity={0.7}
@@ -218,9 +239,16 @@ export default function FoldersScreen({ navigation }: Props) {
     <View style={styles.container}>
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
       <FlatList
-        data={folders}
+        data={folders.slice(0, visibleCount)}
         keyExtractor={(item) => String(item.id)}
         renderItem={renderItem}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.3}
+        ListFooterComponent={
+          isLoadingMore ? (
+            <ActivityIndicator style={styles.footerLoader} color={colors.accent} />
+          ) : null
+        }
         contentContainerStyle={folders.length === 0 ? styles.emptyContainer : styles.listContent}
         refreshControl={
           <RefreshControl
@@ -298,6 +326,8 @@ export default function FoldersScreen({ navigation }: Props) {
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bg },
+    headerButton: { marginRight: 12 },
+    footerLoader: { paddingVertical: 14 },
     center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
     listContent: { padding: 12 },
     emptyContainer: { flexGrow: 1, justifyContent: 'center' },

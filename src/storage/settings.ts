@@ -17,6 +17,7 @@ const SERVERS_KEY = 'poznote.servers.v1';
 const THEME_MODE_KEY = 'poznote.themeMode.v1';
 const LANGUAGE_MODE_KEY = 'poznote.languageMode.v1';
 const WORKSPACE_KEY = 'poznote.selectedWorkspace.v1';
+const AI_SETTINGS_KEY = 'poznote.aiSettings.v1';
 // legacy формат первой версии приложения (один сервер)
 const LEGACY_SETTINGS_KEY = 'poznote.serverSettings.v1';
 
@@ -108,4 +109,42 @@ export async function loadLanguageMode(): Promise<LanguageMode> {
 
 export async function saveLanguageMode(mode: LanguageMode): Promise<void> {
   await AsyncStorage.setItem(LANGUAGE_MODE_KEY, mode);
+}
+
+/** Настройки OpenAI-совместимого API для AI-чата. */
+export interface AISettings {
+  /** false = весь AI-функционал скрыт (вкладка чата и настройки). */
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+export const DEFAULT_AI_SETTINGS: AISettings = {
+  enabled: true,
+  baseUrl: 'https://api.openai.com/v1',
+  apiKey: '',
+  model: 'gpt-4o-mini',
+};
+
+export async function loadAISettings(): Promise<AISettings> {
+  try {
+    const raw = await AsyncStorage.getItem(AI_SETTINGS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<AISettings>;
+      return {
+        enabled: typeof parsed.enabled === 'boolean' ? parsed.enabled : true,
+        baseUrl: typeof parsed.baseUrl === 'string' && parsed.baseUrl ? parsed.baseUrl : DEFAULT_AI_SETTINGS.baseUrl,
+        apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : '',
+        model: typeof parsed.model === 'string' && parsed.model ? parsed.model : DEFAULT_AI_SETTINGS.model,
+      };
+    }
+  } catch {
+    // fallthrough
+  }
+  return DEFAULT_AI_SETTINGS;
+}
+
+export async function saveAISettings(settings: AISettings): Promise<void> {
+  await AsyncStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(settings));
 }

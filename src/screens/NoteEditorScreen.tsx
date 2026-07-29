@@ -20,6 +20,7 @@ import AttachmentsModal from '../components/AttachmentsModal';
 import ActionSheet, { ActionSheetItem } from '../components/ActionSheet';
 import { useDialog } from '../components/DialogProvider';
 import { buildShareUrl } from '../utils/url';
+import { useAndroidKeyboardPadding } from '../utils/keyboard';
 import { useSettings } from '../context/SettingsContext';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { dateLocale, Locale, useI18n } from '../i18n';
@@ -52,6 +53,9 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   const dialog = useDialog();
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles, colors);
+  // На Android 15+ отступ равен полной высоте клавиатуры:
+  // endCoordinates.height уже не включает системный инсет навигации.
+  const bottomPadding = useAndroidKeyboardPadding();
   const { t, locale } = useI18n();
 
   const [note, setNote] = useState<NoteDetails | null>(null);
@@ -533,7 +537,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
 
   return (
     <KeyboardAvoidingView
-      style={styles.flex}
+      style={[styles.flex, { paddingBottom: bottomPadding }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
@@ -791,7 +795,7 @@ const createStyles = (colors: ThemeColors) =>
       minHeight: 320,
       paddingVertical: 8,
     },
-    headerButtons: { flexDirection: 'row', alignItems: 'center' },
+    headerButtons: { flexDirection: 'row', alignItems: 'center', marginRight: 12 },
     headerButton: { marginLeft: 18 },
     errorText: { fontSize: 14, color: colors.danger, marginTop: 12, textAlign: 'center' },
     savedText: { fontSize: 12, color: colors.textFaint, marginTop: 12 },

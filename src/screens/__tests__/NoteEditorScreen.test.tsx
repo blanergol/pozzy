@@ -56,6 +56,20 @@ jest.mock('../../context/SettingsContext', () => {
   };
 });
 
+// Мокаем DialogProvider: экран использует useDialog, в тесте провайдера нет
+jest.mock('../../components/DialogProvider', () => ({
+  useDialog: () => ({
+    alert: jest.fn(),
+    confirm: jest.fn(async () => true),
+    prompt: jest.fn(async () => null),
+  }),
+}));
+
+// Мокаем safe-area: в тесте нет SafeAreaProvider
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
+
 const navigation: any = {
   setOptions: jest.fn(),
   navigate: jest.fn(),
@@ -81,5 +95,9 @@ describe('NoteEditorScreen', () => {
     // контент заметки попал в TextInput
     const flat = JSON.stringify(json);
     expect(flat).toContain('Привет, мир');
+    // размонтируем: очистит интервалы heartbeat блокировки, иначе jest не завершится
+    await act(async () => {
+      tree!.unmount();
+    });
   });
 });

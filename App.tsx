@@ -2,6 +2,8 @@ import React, { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
@@ -10,15 +12,79 @@ import { useTheme } from './src/theme/ThemeContext';
 import { useI18n } from './src/i18n';
 import { DialogProvider } from './src/components/DialogProvider';
 import { AppLockProvider, AppLockScreen } from './src/security/AppLock';
-import { RootStackParamList } from './src/navigation/types';
+import { MainTabParamList, RootStackParamList } from './src/navigation/types';
 import SettingsScreen from './src/screens/SettingsScreen';
 import NotesListScreen from './src/screens/NotesListScreen';
 import NoteEditorScreen from './src/screens/NoteEditorScreen';
 import FoldersScreen from './src/screens/FoldersScreen';
+import ChatScreen from './src/screens/ChatScreen';
 import TrashScreen from './src/screens/TrashScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+const Tab = createBottomTabNavigator<MainTabParamList>();
+
+// NotesListScreen используется и как вкладка (Notes), и как стек-экран
+// открытой папки (FolderNotes) — параметры маршрутов совпадают.
+const FolderNotesComponent = NotesListScreen as unknown as React.ComponentType<
+  import('@react-navigation/native-stack').NativeStackScreenProps<RootStackParamList, 'FolderNotes'>
+>;
+
+function MainTabs() {
+  const { colors } = useTheme();
+  const { t } = useI18n();
+  const { aiSettings } = useSettings();
+
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerTintColor: colors.accent,
+        headerTitleStyle: { color: colors.text },
+        headerStyle: { backgroundColor: colors.card },
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.textFaint,
+        tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.borderLight },
+        sceneStyle: { backgroundColor: colors.bg },
+      }}
+    >
+      <Tab.Screen
+        name="Notes"
+        component={NotesListScreen}
+        options={{
+          title: t('nav.notes'),
+          tabBarAccessibilityLabel: t('nav.notes'),
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="document-text-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Folders"
+        component={FoldersScreen}
+        options={{
+          title: t('nav.folders'),
+          tabBarAccessibilityLabel: t('nav.folders'),
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="folder-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      {aiSettings.enabled ? (
+        <Tab.Screen
+          name="Chat"
+          component={ChatScreen}
+          options={{
+            title: t('nav.chat'),
+            tabBarAccessibilityLabel: t('nav.chat'),
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="chatbubble-ellipses-outline" size={size} color={color} />
+            ),
+          }}
+        />
+      ) : null}
+    </Tab.Navigator>
+  );
+}
 
 function RootNavigator() {
   const { activeProfile, isLoading } = useSettings();
@@ -36,7 +102,7 @@ function RootNavigator() {
   return (
     <Stack.Navigator
       // Первый экран — настройки, если ни один сервер ещё не настроен
-      initialRouteName={activeProfile ? 'NotesList' : 'Settings'}
+      initialRouteName={activeProfile ? 'Tabs' : 'Settings'}
       screenOptions={{
         headerTintColor: colors.accent,
         headerTitleStyle: { color: colors.text },
@@ -44,22 +110,14 @@ function RootNavigator() {
         contentStyle: { backgroundColor: colors.bg },
       }}
     >
+      <Stack.Screen name="Tabs" component={MainTabs} options={{ headerShown: false }} />
       <Stack.Screen
         name="Settings"
         component={SettingsScreen}
         options={{ title: t('nav.settings'), headerBackVisible: !!activeProfile }}
       />
-      <Stack.Screen
-        name="NotesList"
-        component={NotesListScreen}
-        options={{ title: t('nav.notes'), headerBackVisible: false }}
-      />
       <Stack.Screen name="NoteEditor" component={NoteEditorScreen} options={{ title: '' }} />
-      <Stack.Screen
-        name="Folders"
-        component={FoldersScreen}
-        options={{ title: t('nav.folders') }}
-      />
+      <Stack.Screen name="FolderNotes" component={FolderNotesComponent} options={{ title: '' }} />
       <Stack.Screen name="Trash" component={TrashScreen} options={{ title: t('nav.trash') }} />
       <Stack.Screen
         name="Notifications"

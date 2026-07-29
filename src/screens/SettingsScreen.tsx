@@ -56,6 +56,8 @@ export default function SettingsScreen({ navigation }: Props) {
     languageMode,
     setLanguageMode,
     workspace,
+    aiSettings,
+    saveAiSettings,
   } = useSettings();
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles, colors);
@@ -85,6 +87,13 @@ export default function SettingsScreen({ navigation }: Props) {
   const [isChecking, setIsChecking] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [profileActions, setProfileActions] = useState<ServerProfile | null>(null);
+
+  // Форма AI-чата (OpenAI-совместимый API)
+  const [aiEnabled, setAiEnabled] = useState(aiSettings.enabled);
+  const [aiBaseUrl, setAiBaseUrl] = useState(aiSettings.baseUrl);
+  const [aiApiKey, setAiApiKey] = useState(aiSettings.apiKey);
+  const [aiModel, setAiModel] = useState(aiSettings.model);
+  const [aiSaved, setAiSaved] = useState(false);
 
   // Секции сервера
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -147,7 +156,7 @@ export default function SettingsScreen({ navigation }: Props) {
         }
       }
       setFormState('hidden');
-      navigation.reset({ index: 0, routes: [{ name: 'NotesList' }] });
+      navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] });
     } catch (e) {
       setFormError(describeError(e));
     } finally {
@@ -157,7 +166,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
   const handleSwitch = async (profile: ServerProfile) => {
     await switchProfile(profile.id);
-    navigation.reset({ index: 0, routes: [{ name: 'NotesList' }] });
+    navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] });
   };
 
   const profileActionItems = useCallback((): ActionSheetItem[] => {
@@ -501,6 +510,95 @@ export default function SettingsScreen({ navigation }: Props) {
               );
             })}
           </View>
+        </View>
+
+        {/* AI-чат */}
+        <Text style={styles.sectionTitle}>{t('settings.aiSection')}</Text>
+        <View style={styles.card}>
+          <View style={styles.rowBetween}>
+            <Text style={styles.rowLabel}>{t('settings.aiEnabled')}</Text>
+            <Switch
+              value={aiEnabled}
+              onValueChange={(value) => {
+                setAiEnabled(value);
+                saveAiSettings({
+                  enabled: value,
+                  baseUrl: aiBaseUrl.trim(),
+                  apiKey: aiApiKey.trim(),
+                  model: aiModel.trim(),
+                });
+              }}
+              trackColor={{ false: colors.border, true: colors.accent }}
+              thumbColor={colors.accentText}
+              accessibilityLabel={t('settings.aiEnabled')}
+            />
+          </View>
+
+          {aiEnabled ? (
+            <>
+              <Text style={styles.label}>{t('settings.aiBaseUrl')}</Text>
+              <TextInput
+                style={styles.input}
+                value={aiBaseUrl}
+                onChangeText={(v) => {
+                  setAiBaseUrl(v);
+                  setAiSaved(false);
+                }}
+                placeholder="https://api.openai.com/v1"
+                placeholderTextColor={colors.textFaint}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+              />
+
+              <Text style={styles.label}>{t('settings.aiApiKey')}</Text>
+              <TextInput
+                style={styles.input}
+                value={aiApiKey}
+                onChangeText={(v) => {
+                  setAiApiKey(v);
+                  setAiSaved(false);
+                }}
+                placeholder="sk-..."
+                placeholderTextColor={colors.textFaint}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              <Text style={styles.label}>{t('settings.aiModel')}</Text>
+              <TextInput
+                style={styles.input}
+                value={aiModel}
+                onChangeText={(v) => {
+                  setAiModel(v);
+                  setAiSaved(false);
+                }}
+                placeholder="gpt-4o-mini"
+                placeholderTextColor={colors.textFaint}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              <TouchableOpacity
+                style={styles.button}
+                onPress={() => {
+                  saveAiSettings({
+                    enabled: aiEnabled,
+                    baseUrl: aiBaseUrl.trim(),
+                    apiKey: aiApiKey.trim(),
+                    model: aiModel.trim(),
+                  });
+                  setAiSaved(true);
+                }}
+                accessibilityLabel={t('settings.aiSave')}
+              >
+                <Text style={styles.buttonText}>
+                  {aiSaved ? t('settings.aiSaved') : t('settings.aiSave')}
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
         </View>
 
         {/* Безопасность (только нативные платформы) */}

@@ -10,11 +10,15 @@ import { PoznoteClient, ServerSettings } from '../api/client';
 import { ThemeMode, ThemeProvider } from '../theme/ThemeContext';
 import { I18nProvider, LanguageMode } from '../i18n';
 import {
+  AISettings,
   clearWorkspace,
+  DEFAULT_AI_SETTINGS,
+  loadAISettings,
   loadLanguageMode,
   loadSelectedWorkspace,
   loadServers,
   loadThemeMode,
+  saveAISettings,
   saveLanguageMode,
   saveSelectedWorkspace,
   saveServers,
@@ -46,6 +50,9 @@ interface SettingsContextValue {
   /** Язык интерфейса. */
   languageMode: LanguageMode;
   setLanguageMode: (mode: LanguageMode) => void;
+  /** Настройки OpenAI-совместимого API для AI-чата. */
+  aiSettings: AISettings;
+  saveAiSettings: (settings: AISettings) => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -60,16 +67,18 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [workspace, setWorkspaceState] = useState<string | null>(null);
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const [languageMode, setLanguageModeState] = useState<LanguageMode>('system');
+  const [aiSettings, setAiSettings] = useState<AISettings>(DEFAULT_AI_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([loadServers(), loadSelectedWorkspace(), loadThemeMode(), loadLanguageMode()])
-      .then(([serversStorage, loadedWorkspace, loadedTheme, loadedLanguage]) => {
+    Promise.all([loadServers(), loadSelectedWorkspace(), loadThemeMode(), loadLanguageMode(), loadAISettings()])
+      .then(([serversStorage, loadedWorkspace, loadedTheme, loadedLanguage, loadedAI]) => {
         setProfiles(serversStorage.servers);
         setActiveId(serversStorage.activeId);
         setWorkspaceState(loadedWorkspace);
         setThemeModeState(loadedTheme);
         setLanguageModeState(loadedLanguage);
+        setAiSettings(loadedAI);
       })
       .finally(() => setIsLoading(false));
   }, []);
@@ -134,6 +143,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     saveLanguageMode(mode).catch(() => {});
   }, []);
 
+  const saveAiSettings = useCallback((settings: AISettings) => {
+    setAiSettings(settings);
+    saveAISettings(settings).catch(() => {});
+  }, []);
+
   const activeProfile = useMemo(
     () => profiles.find((p) => p.id === activeId) ?? null,
     [profiles, activeId],
@@ -155,6 +169,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setThemeMode,
       languageMode,
       setLanguageMode,
+      aiSettings,
+      saveAiSettings,
     }),
     [
       profiles,
@@ -170,6 +186,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setThemeMode,
       languageMode,
       setLanguageMode,
+      aiSettings,
+      saveAiSettings,
     ],
   );
 

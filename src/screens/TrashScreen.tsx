@@ -83,17 +83,45 @@ export default function TrashScreen({ navigation }: Props) {
     ]);
   }, [client, workspace, load, dialog, t]);
 
+  // Массовое восстановление: bulk-эндпоинта в API нет — восстанавливаем по одной
+  const handleRestoreAll = useCallback(() => {
+    if (!client || notes.length === 0) return;
+    dialog.alert(t('trash.restoreAllTitle'), t('trash.restoreAllMessage'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('trash.restoreAll'),
+        onPress: async () => {
+          try {
+            const results = await Promise.allSettled(notes.map((n) => client.restoreNote(n.id)));
+            const failed = results.filter((r) => r.status === 'rejected').length;
+            if (failed > 0) {
+              setError(t('trash.restoreFailed', { failed, total: notes.length }));
+            }
+            await load('refresh');
+          } catch (e) {
+            setError(describeError(e));
+          }
+        },
+      },
+    ]);
+  }, [client, notes, load, dialog, t]);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       title: t('nav.trash'),
       headerRight: () =>
         notes.length > 0 ? (
-          <TouchableOpacity onPress={handleEmptyTrash} hitSlop={8}>
-            <Text style={styles.emptyAllText}>{t('trash.emptyAll')}</Text>
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity onPress={handleRestoreAll} hitSlop={8} accessibilityLabel={t('trash.restoreAll')}>
+              <Text style={styles.restoreAllText}>{t('trash.restoreAll')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleEmptyTrash} hitSlop={8}>
+              <Text style={styles.emptyAllText}>{t('trash.emptyAll')}</Text>
+            </TouchableOpacity>
+          </View>
         ) : null,
     });
-  }, [navigation, notes.length, handleEmptyTrash, t]);
+  }, [navigation, notes.length, handleEmptyTrash, handleRestoreAll, styles, t]);
 
   const handleRestore = (note: TrashedNote) => {
     if (!client) return;
@@ -210,5 +238,7 @@ const createStyles = (colors: ThemeColors) =>
     rowAction: { marginLeft: 16 },
     emptyText: { marginTop: 12, fontSize: 15, color: colors.textFaint },
     emptyAllText: { fontSize: 15, color: colors.danger, fontWeight: '600' },
+    restoreAllText: { fontSize: 15, color: colors.accent, fontWeight: '600' },
+    headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 18, marginRight: 12 },
     errorText: { fontSize: 14, color: colors.danger, textAlign: 'center', margin: 12 },
   });

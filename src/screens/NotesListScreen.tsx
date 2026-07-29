@@ -12,16 +12,21 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useFocusEffect } from '@react-navigation/native';
+import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { CompositeScreenProps, useFocusEffect } from '@react-navigation/native';
 import { describeError } from '../api/client';
+import ActionSheet, { ActionSheetItem } from '../components/ActionSheet';
 import { useDialog } from '../components/DialogProvider';
 import { useSettings } from '../context/SettingsContext';
 import { NoteListItem, Workspace } from '../api/types';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { dateLocale, Locale, useI18n } from '../i18n';
-import { RootStackParamList } from '../navigation/types';
+import { MainTabParamList, RootStackParamList } from '../navigation/types';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'NotesList'>;
+type Props = CompositeScreenProps<
+  BottomTabScreenProps<MainTabParamList, 'Notes'>,
+  NativeStackScreenProps<RootStackParamList>
+>;
 
 function formatDate(value: string, locale: Locale): string {
   const date = new Date(value.replace(' ', 'T'));
@@ -35,6 +40,9 @@ function formatDate(value: string, locale: Locale): string {
   });
 }
 
+// Пагинация списка: показываем порциями, догружаем при скролле
+const PAGE_SIZE = 10;
+
 export default function NotesListScreen({ navigation, route }: Props) {
   const { client, workspace, setWorkspace } = useSettings();
   const { colors } = useTheme();
@@ -45,12 +53,21 @@ export default function NotesListScreen({ navigation, route }: Props) {
   const folderName = route.params?.folderName;
 
   const [notes, setNotes] = useState<NoteListItem[]>([]);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [wsModalVisible, setWsModalVisible] = useState(false);
   const [workspaces, setWorkspaces] = useState<Workspace[] | null>(null);
+  // Управление пространствами: ActionSheet и модалка ввода имени
+  const [wsActions, setWsActions] = useState<Workspace | null>(null);
+  const [wsNameModal, setWsNameModal] = useState<
+    { mode: 'create' } | { mode: 'rename'; workspace: Workspace } | null
+  >(null);
+  const [wsNameValue, setWsNameValue] = useState('');
+  const [wsSaving, setWsSaving] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   /** null = обычный режим; Set = режим выбора с отмеченными id */
   const [selection, setSelection] = useState<Set<number> | null>(null);
@@ -80,6 +97,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
           folder_id: folderId,
         });
         setNotes(list);
+        setVisibleCount(PAGE_SIZE);
         setError(null);
       } catch (e) {
         setError(describeError(e));
@@ -99,6 +117,16 @@ export default function NotesListScreen({ navigation, route }: Props) {
     }, [load, loadUnreadCount]),
   );
 
+  // Плавная догрузка следующей порции при скролле
+  const handleLoadMore = useCallback(() => {
+    if (isLoadingMore || visibleCount >= notes.length) return;
+    setIsLoadingMore(true);
+    setTimeout(() => {
+      setVisibleCount((c) => c + PAGE_SIZE);
+      setIsLoadingMore(false);
+    }, 250);
+  }, [isLoadingMore, visibleCount, notes.length]);
+
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => load(search, 'silent'), 350);
@@ -110,7 +138,6 @@ export default function NotesListScreen({ navigation, route }: Props) {
   const openWorkspaceSwitcher = useCallback(async () => {
     if (!client) return;
     setWsModalVisible(true);
-    if (workspaces !== null) return;
     try {
       const list = await client.listWorkspaces();
       setWorkspaces(list);
@@ -118,7 +145,73 @@ export default function NotesListScreen({ navigation, route }: Props) {
       setWsModalVisible(false);
       setError(describeError(e));
     }
-  }, [client, workspaces]);
+  }, [client]);
+
+  const handleSaveWorkspace = useCallback(async () => {
+    if (!client || !wsNameModal) return;
+    const name = wsNameValue.trim();
+    if (!name) return;
+    setWsSaving(true);
+    try {
+      if (wsNameModal.mode === 'create') {
+        await client.createWorkspace(name);
+      } else {
+        const oldName = wsNameModal.workspace.name;
+        await client.renameWorkspace(oldName, name);
+        if (workspace === oldName) setWorkspace(name);
+      }
+      setWorkspaces(await client.listWorkspaces());
+      setWsNameModal(null);
+    } catch (e) {
+      setError(describeError(e));
+    } finally {
+      setWsSaving(false);
+    }
+  }, [client, wsNameModal, wsNameValue, workspace, setWorkspace]);
+
+  const handleDeleteWorkspace = useCallback(
+    (w: Workspace) => {
+      if (!client) return;
+      dialog.alert(t('list.workspaceDeleteTitle', { name: w.name }), t('list.workspaceDeleteMessage'), [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.delete'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await client.deleteWorkspace(w.name);
+              if (workspace === w.name) setWorkspace(null);
+              setWorkspaces(await client.listWorkspaces());
+            } catch (e) {
+              setError(describeError(e));
+            }
+          },
+        },
+      ]);
+    },
+    [client, dialog, t, workspace, setWorkspace],
+  );
+
+  const wsActionItems = useCallback((): ActionSheetItem[] => {
+    if (!wsActions) return [];
+    const w = wsActions;
+    return [
+      {
+        label: t('list.workspaceRename'),
+        icon: 'pencil-outline',
+        onPress: () => {
+          setWsNameValue(w.name);
+          setWsNameModal({ mode: 'rename', workspace: w });
+        },
+      },
+      {
+        label: t('list.workspaceDelete'),
+        icon: 'trash-outline',
+        destructive: true,
+        onPress: () => handleDeleteWorkspace(w),
+      },
+    ];
+  }, [wsActions, t, handleDeleteWorkspace]);
 
   // ===== Режим выбора (массовое удаление) =====
 
@@ -257,14 +350,6 @@ export default function NotesListScreen({ navigation, route }: Props) {
               size={22}
               color={workspace ? colors.star : colors.accent}
             />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('Folders')}
-            hitSlop={8}
-            style={styles.headerButton}
-            accessibilityLabel={t('list.a11yFolders')}
-          >
-            <Ionicons name="folder-outline" size={22} color={colors.accent} />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => navigation.navigate('Trash')}
@@ -425,9 +510,16 @@ export default function NotesListScreen({ navigation, route }: Props) {
         </View>
       ) : (
         <FlatList
-          data={notes}
+          data={notes.slice(0, visibleCount)}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderItem}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={
+            isLoadingMore ? (
+              <ActivityIndicator style={styles.footerLoader} color={colors.accent} />
+            ) : null
+          }
           contentContainerStyle={notes.length === 0 ? styles.emptyContainer : styles.listContent}
           refreshControl={
             <RefreshControl
@@ -466,7 +558,19 @@ export default function NotesListScreen({ navigation, route }: Props) {
           onPress={() => setWsModalVisible(false)}
         >
           <View style={styles.wsCard}>
-            <Text style={styles.wsTitle}>{t('list.workspace')}</Text>
+            <View style={styles.wsTitleRow}>
+              <Text style={styles.wsTitle}>{t('list.workspace')}</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setWsNameValue('');
+                  setWsNameModal({ mode: 'create' });
+                }}
+                hitSlop={8}
+                accessibilityLabel={t('list.workspaceNew')}
+              >
+                <Ionicons name="add" size={24} color={colors.accent} />
+              </TouchableOpacity>
+            </View>
             {workspaces === null ? (
               <ActivityIndicator color={colors.accent} style={styles.wsSpinner} />
             ) : (
@@ -484,24 +588,90 @@ export default function NotesListScreen({ navigation, route }: Props) {
                   ) : null}
                 </TouchableOpacity>
                 {workspaces.map((w) => (
-                  <TouchableOpacity
-                    key={w.name}
-                    style={styles.wsRow}
-                    onPress={() => {
-                      setWorkspace(w.name);
-                      setWsModalVisible(false);
-                    }}
-                  >
-                    <Text style={styles.wsRowText}>{w.name}</Text>
-                    {workspace === w.name ? (
-                      <Ionicons name="checkmark" size={18} color={colors.accent} />
-                    ) : null}
-                  </TouchableOpacity>
+                  <View key={w.name} style={styles.wsRow}>
+                    <TouchableOpacity
+                      style={styles.wsRowMain}
+                      onPress={() => {
+                        setWorkspace(w.name);
+                        setWsModalVisible(false);
+                      }}
+                    >
+                      <Text style={styles.wsRowText}>{w.name}</Text>
+                      {workspace === w.name ? (
+                        <Ionicons name="checkmark" size={18} color={colors.accent} />
+                      ) : null}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        // закрываем свитчер: иначе ActionSheet и диалоги
+                        // уходят под модалку (на web ломаются клики)
+                        setWsModalVisible(false);
+                        setWsActions(w);
+                      }}
+                      hitSlop={8}
+                      accessibilityLabel={t('list.workspaceEdit')}
+                    >
+                      <Ionicons name="ellipsis-vertical" size={16} color={colors.textFaint} />
+                    </TouchableOpacity>
+                  </View>
                 ))}
               </>
             )}
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Действия с пространством */}
+      <ActionSheet
+        visible={wsActions !== null}
+        title={wsActions?.name}
+        items={wsActionItems()}
+        onClose={() => setWsActions(null)}
+      />
+
+      {/* Создание/переименование пространства */}
+      <Modal
+        visible={wsNameModal !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setWsNameModal(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              {wsNameModal?.mode === 'rename' ? t('list.workspaceRename') : t('list.workspaceNew')}
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              value={wsNameValue}
+              onChangeText={setWsNameValue}
+              placeholder={t('list.workspaceNamePlaceholder')}
+              placeholderTextColor={colors.textFaint}
+              autoFocus
+              onSubmitEditing={handleSaveWorkspace}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity onPress={() => setWsNameModal(null)} style={styles.modalButton}>
+                <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSaveWorkspace}
+                style={styles.modalButton}
+                disabled={wsSaving || !wsNameValue.trim()}
+              >
+                {wsSaving ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <Text
+                    style={[styles.modalSaveText, !wsNameValue.trim() && styles.modalSaveDisabled]}
+                  >
+                    {t('common.save')}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -557,7 +727,8 @@ const createStyles = (colors: ThemeColors) =>
     },
     retryText: { color: colors.accentText, fontWeight: '600' },
     resetText: { marginTop: 14, color: colors.accent, fontSize: 14 },
-    headerButtons: { flexDirection: 'row', alignItems: 'center' },
+    headerButtons: { flexDirection: 'row', alignItems: 'center', marginRight: 12 },
+    footerLoader: { paddingVertical: 14 },
     headerButton: { marginLeft: 18 },
     badge: {
       position: 'absolute',
@@ -579,17 +750,52 @@ const createStyles = (colors: ThemeColors) =>
       padding: 40,
     },
     wsCard: { backgroundColor: colors.card, borderRadius: 14, padding: 16 },
-    wsTitle: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 8 },
+    wsTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 8,
+    },
+    wsTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
     wsSpinner: { marginVertical: 16 },
     wsRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      gap: 8,
       paddingVertical: 12,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.borderLight,
     },
+    wsRowMain: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
     wsRowText: { fontSize: 16, color: colors.text },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'center',
+      padding: 32,
+    },
+    modalCard: { backgroundColor: colors.card, borderRadius: 14, padding: 20 },
+    modalTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginBottom: 14 },
+    modalInput: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 16,
+      color: colors.text,
+    },
+    modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 18, gap: 20 },
+    modalButton: { paddingVertical: 6, paddingHorizontal: 4 },
+    modalCancelText: { fontSize: 16, color: colors.textFaint },
+    modalSaveText: { fontSize: 16, color: colors.accent, fontWeight: '600' },
+    modalSaveDisabled: { opacity: 0.4 },
     fab: {
       position: 'absolute',
       right: 20,
