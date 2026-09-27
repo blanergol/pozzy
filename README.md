@@ -27,12 +27,15 @@ Pozzy talks to your own Poznote server over its REST API (HTTP Basic Auth + `X-U
 - Light / dark / system theme, persisted
 - **Two UI languages: English and Russian** — auto-detected from the system locale, with a manual override in Settings
 - **App lock with biometrics or device PIN** (Face ID / fingerprint / system passcode), relocks after 30 s in background (native only)
+- **Offline mode**: when the server is unreachable, the app keeps working on a local cache (AsyncStorage) — you can browse, create, and edit notes; changes are queued and synced automatically once the connection is back (**last-write-wins by modification date** on conflicts). An "offline mode" banner is shown while disconnected
+- **Onboarding**: a one-time 3-slide intro (what Pozzy is, key features, how to use the AI agent) shown before any setup; a "seen" flag is stored locally so it never appears again
 
 **Notes**
 - List with instant search, workspace and folder filters, pull-to-refresh, and sort by last update
 - Multi-select mode: long-press a note → checkboxes, select all, bulk delete
 - Editor with **edit-lock** support (safe co-editing with the web UI: acquire, heartbeat, release, conflict banner)
 - Create, edit (heading, tags, content), favorite, soft-delete
+- **Autosave in the editor** — no save button: changes are persisted automatically (debounced) and flushed when you leave the note
 - Duplicate, convert Markdown ↔ HTML, move to folder
 - Public share links (create / revoke / send)
 - Reminders with quick intervals
@@ -141,10 +144,13 @@ Tap **“Check & save”**: the app validates the credentials and `/api/v1/notes
 
 ```bash
 npx tsc --noEmit                    # TypeScript
+npx jest                            # unit tests (70)
 npx expo export                     # production bundles for web/iOS/Android
 node scripts/mock-server.js 8901 &  # stateful mock of the Poznote API
-node scripts/e2e.js                 # end-to-end walkthrough (needs expo web on :8081) — 40 checks
+node scripts/e2e.js                 # end-to-end walkthrough (needs expo web on :8081) — 63 checks
 ```
+
+CI/CD (GitHub Actions, see [docs/CI-RELEASE.md](docs/CI-RELEASE.md)): pushes and PRs to `master` run type-check + unit tests; pushing a `v*` tag additionally builds a signed Android APK and publishes it as a GitHub Release.
 
 The E2E suite (`scripts/e2e.js`) drives the real app in a browser via Playwright against a full stateful mock of the Poznote API (`scripts/mock-server.js`): connection, search, workspaces, notifications, every editor action, folders, trash, multi-select, and settings. Reset the mock between runs with `GET /__reset`. For the demo dataset used in the screenshots above, run the mock with `node scripts/mock-server.js 8902 showcase` (and `scripts/screenshots.js` to regenerate them).
 
@@ -157,24 +163,35 @@ src/i18n/                            — ru/en dictionaries + provider (system l
 src/api/client.ts                    — Poznote HTTP client (Basic Auth + X-User-ID), 100 API calls
 src/api/chat.ts                      — OpenAI-compatible chat client (/chat/completions + function calling)
 src/chat/agent.ts                    — agent loop (model ↔ tools, step limit, approval)
-src/chat/tools.ts                    — Poznote tools for the AI chat (search/read/create/update/move/delete)
+src/chat/tools/                      — Poznote tools for the AI chat (search/read/create/update/move/delete)
+src/chat/memory.ts                   — two-level memory (recent messages + LLM-compacted summary)
 src/api/types.ts                     — API types (matching real server responses)
 src/context/SettingsContext.tsx      — server profiles, active server, theme, workspace
+src/context/ConnectivityContext.tsx  — online/offline status (netinfo) + manual override
 src/storage/settings.ts              — persistence (AsyncStorage): servers, theme, workspace
+src/storage/offlineStore.ts          — offline cache: notes snapshot + pending-changes queue
+src/data/notesRepository.ts          — offline-first notes data layer (cache ⇄ API)
+src/data/sync.ts                     — sync of queued changes on reconnect (last-write-wins by date)
+src/components/OfflineBanner.tsx     — "offline mode" banner
+src/components/SyncManager.tsx       — triggers sync when connectivity returns
 src/components/ActionSheet.tsx       — bottom-sheet menus (Alert is limited on Android)
 src/components/DialogProvider.tsx    — cross-platform dialogs (RN-web Alert is a no-op)
 src/components/AttachmentsModal.tsx  — note attachments
+src/components/MarkdownText.tsx      — Markdown rendering (+ src/components/markdownParser.ts)
+src/screens/OnboardingScreen.tsx     — one-time 3-slide intro shown on first launch
 src/screens/SettingsScreen.tsx       — servers, theme, system, Git Sync, backups, share links, AI chat
 src/screens/NotesListScreen.tsx      — notes list (search, filters, multi-select, badge)
-src/screens/NoteEditorScreen.tsx     — editor (edit-lock, actions, snapshots, backlinks)
+src/screens/NoteEditorScreen.tsx     — editor (autosave, edit-lock, actions, snapshots, backlinks)
 src/screens/FoldersScreen.tsx        — folders
 src/screens/ChatScreen.tsx           — AI chat (OpenAI-compatible API)
 src/screens/TrashScreen.tsx          — trash
 src/screens/NotificationsScreen.tsx  — notifications (reminders)
+plugins/withReleaseSigning.js        — Expo config plugin: release APK signing from CI secrets
 scripts/mock-server.js               — stateful Poznote API mock (port 8901)
 scripts/e2e.js                       — Playwright E2E suite
 docs/openapi.yaml                    — vendored Poznote OpenAPI spec
 docs/API-COVERAGE.md                 — API coverage checklist + spec/server discrepancies
+docs/CI-RELEASE.md                   — CI/CD: tests on push/PR, signed APK release on v* tags
 ```
 
 ## Troubleshooting

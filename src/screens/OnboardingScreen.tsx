@@ -248,8 +248,8 @@ const styles = StyleSheet.create({
 
   title: { color: '#ffffff', fontSize: 26, fontWeight: '800', textAlign: 'center', marginBottom: 16 },
   text: { color: TEXT, fontSize: 16, lineHeight: 24, textAlign: 'center' },
-  bullets: { gap: 12, alignSelf: 'center' },
-  bulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, maxWidth: 320 },
+  bullets: { gap: 12, width: '100%', maxWidth: 340, alignSelf: 'center' },
+  bulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   bulletDot: {
     width: 7,
     height: 7,
@@ -263,12 +263,15 @@ const styles = StyleSheet.create({
   startButton: {
     marginTop: 36,
     alignSelf: 'center',
+    alignItems: 'center',
+    minWidth: 200,
     backgroundColor: BRAND_YELLOW,
     borderRadius: 28,
     paddingHorizontal: 48,
     paddingVertical: 14,
   },
-  startButtonText: { color: BRAND_DARK, fontSize: 17, fontWeight: '800' },
+  // padding у текста — на Android жирное начертание иначе обрезает последнюю букву
+  startButtonText: { color: BRAND_DARK, fontSize: 17, fontWeight: '800', paddingHorizontal: 4 },
 
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 8, paddingVertical: 16 },
   dot: {
