@@ -270,8 +270,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 48,
     paddingVertical: 14,
   },
-  // padding у текста — на Android жирное начертание иначе обрезает последнюю букву
-  startButtonText: { color: BRAND_DARK, fontSize: 17, fontWeight: '800', paddingHorizontal: 4 },
+  // minWidth + центрирование у текста: на Android синтетический жирный
+  // (fontWeight 800) рисует последнюю букву за пределами измеренной ширины —
+  // у текста должен быть запас ширины, иначе «Начать» обрезается до «Начат»
+  startButtonText: {
+    color: BRAND_DARK,
+    fontSize: 17,
+    fontWeight: '800',
+    minWidth: 120,
+    textAlign: 'center',
+    paddingHorizontal: 4,
+  },
 
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 8, paddingVertical: 16 },
   dot: {
