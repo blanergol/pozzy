@@ -26,7 +26,8 @@
     "plugins": [
       "expo-sharing",
       "expo-asset",
-      "expo-localization"
+      "expo-localization",
+      "./plugins/withReleaseSigning"
     ]
   }
 }
