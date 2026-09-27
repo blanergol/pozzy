@@ -43,3 +43,6 @@ yarn-error.*
 /scripts
 # local build tooling
 .sdk/
+
+# local build artifacts
+out/

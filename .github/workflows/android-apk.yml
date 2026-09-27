@@ -1,25 +1,44 @@
-# Сборка подписанного release-APK для Android.
+# Релиз: сборка подписанного APK и публикация в GitHub Releases.
 #
-# Триггеры: push в master, теги v*, ручной запуск (workflow_dispatch).
-# APK доступен в артефактах запуска; при пуше тега v* дополнительно
-# публикуется в GitHub Releases.
+# Триггер — тег v* (например: git tag v1.0.1 && git push origin v1.0.1)
+# или ручной запуск (workflow_dispatch).
+# Перед сборкой прогоняются typecheck + unit-тесты.
 #
 # Требуются секреты репозитория (Settings → Secrets and variables → Actions):
 #   RELEASE_KEYSTORE_BASE64   — keystore целиком: `base64 -w0 release.keystore`
 #   RELEASE_KEYSTORE_PASSWORD — пароль хранилища
 #   RELEASE_KEY_ALIAS         — алиас ключа
 #   RELEASE_KEY_PASSWORD      — пароль ключа
-# Если секретов нет, release собирается debug-подписью (см. android/app/build.gradle).
-name: Android APK
+# Если секретов нет, release собирается debug-подписью (см. plugins/withReleaseSigning.js).
+name: Release APK
 
 on:
   push:
-    branches: [master]
     tags: ['v*']
   workflow_dispatch:
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npx jest
+
   build:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,8 +63,8 @@ jobs:
       - name: Prebuild native project
         run: npx expo prebuild --platform android --clean --no-install
 
-      # Если секрет не задан — шаг создаст пустой файл; build.gradle тогда
-      # использует debug-подпись (переменная не выставляется).
+      # Если секрет не задан — переменная не выставляется,
+      # и build.gradle использует debug-подпись.
       - name: Prepare signing keystore
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
@@ -81,3 +100,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: android/app/build/outputs/apk/release/*.apk
+          generate_release_notes: true

@@ -1,13 +1,25 @@
-# CI/CD: сборка release-APK для Android
+# CI/CD: проверки и релиз APK
 
-Workflow: `.github/workflows/android-apk.yml`. Собирает подписанный `app-release.apk` на
-`ubuntu-latest` (JDK 17 + Android SDK уже предустановлены на раннере).
+## Flow
 
-## Триггеры
+1. **Push в `master` или pull request** → workflow `ci.yml`:
+   typecheck (`npx tsc --noEmit`, отдельного ESLint в проекте нет) + unit-тесты (`npx jest`).
 
-- push в `master` — сборка, APK в артефактах запуска (Actions → запуск → Artifacts);
-- тег `v*` (например `git tag v1.0.0 && git push origin v1.0.0`) — сборка + публикация APK в GitHub Releases;
-- ручной запуск: Actions → Android APK → Run workflow.
+2. **Тег `v*`** → workflow `android-apk.yml`: те же проверки, затем сборка
+   подписанного release-APK, проверка подписи `apksigner`, артефакт
+   `pozzy-release-apk` и публикация APK в GitHub Releases (с автогенерацией
+   release notes).
+
+Версии ведём с `v1.0.1`. Выпуск релиза:
+
+```bash
+# поднять version в app.json, затем:
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+`expo prebuild` берёт `versionName` для Android из `expo.version` в `app.json`,
+поэтому версия в `app.json` и тег должны совпадать.
 
 ## Подпись
 
