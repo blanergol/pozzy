@@ -12,6 +12,9 @@
 # Если секретов нет, release собирается debug-подписью (см. plugins/withReleaseSigning.js).
 name: Release APK
 
+permissions:
+  contents: write  # публикация в GitHub Releases
+
 on:
   push:
     tags: ['v*']
