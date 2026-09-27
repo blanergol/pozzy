@@ -25,6 +25,8 @@ export const en: Record<TranslationKey, string> = {
   'error.lock': 'This note is being edited in another session',
   'error.noNoteId': 'The server did not return the new note id',
 
+  'offline.banner': 'Offline mode: changes are saved locally and will sync when reconnected',
+
   'settings.servers': 'Servers',
   'settings.addServer': 'Add server',
   'settings.newServer': 'New server',
@@ -122,6 +124,8 @@ export const en: Record<TranslationKey, string> = {
   'editor.tagsPlaceholder': 'tags, comma separated',
   'editor.contentPlaceholder': 'Note text',
   'editor.savedAt': 'Saved at {time}',
+  'editor.saving': 'Saving…',
+  'editor.savedLocally': 'Saved locally (offline)',
   'editor.lockBanner': 'This note is open for editing in another session',
   'editor.lockReadOnly': 'This note is being edited in another session — read-only mode',
   'editor.deleteTitle': 'Delete note?',

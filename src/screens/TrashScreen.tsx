@@ -14,6 +14,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { describeError } from '../api/client';
 import { TrashedNote } from '../api/types';
 import { useDialog } from '../components/DialogProvider';
+import OfflineBanner from '../components/OfflineBanner';
 import { useSettings } from '../context/SettingsContext';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { dateLocale, Locale, useI18n } from '../i18n';
@@ -194,6 +195,7 @@ export default function TrashScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
+      <OfflineBanner />
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
       <FlatList
         data={notes}

@@ -26,6 +26,9 @@ export const ru = {
   'error.lock': 'Заметка редактируется в другой сессии',
   'error.noNoteId': 'Сервер не вернул id созданной заметки',
 
+  // Оффлайн-режим
+  'offline.banner': 'Офлайн-режим: изменения сохраняются локально и синхронизируются при подключении',
+
   // Настройки
   'settings.servers': 'Серверы',
   'settings.addServer': 'Добавить сервер',
@@ -126,6 +129,8 @@ export const ru = {
   'editor.tagsPlaceholder': 'теги, через запятую',
   'editor.contentPlaceholder': 'Текст заметки',
   'editor.savedAt': 'Сохранено в {time}',
+  'editor.saving': 'Сохранение…',
+  'editor.savedLocally': 'Сохранено локально (оффлайн)',
   'editor.lockBanner': 'Заметка открыта для редактирования в другой сессии',
   'editor.lockReadOnly': 'Заметка редактируется в другой сессии — режим чтения',
   'editor.deleteTitle': 'Удалить заметку?',

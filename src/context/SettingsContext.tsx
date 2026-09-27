@@ -7,6 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { PoznoteClient, ServerSettings } from '../api/client';
+import { clearOfflineData } from '../storage/offlineStore';
 import { ThemeMode, ThemeProvider } from '../theme/ThemeContext';
 import { I18nProvider, LanguageMode } from '../i18n';
 import {
@@ -113,6 +114,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       const next = profiles.filter((p) => p.id !== id);
       const nextActive = activeId === id ? (next[0]?.id ?? null) : activeId;
       persist(next, nextActive);
+      // оффлайн-кэш и очередь удалённого сервера больше не нужны
+      clearOfflineData(id).catch(() => {});
     },
     [profiles, activeId, persist],
   );

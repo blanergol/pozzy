@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -17,8 +17,11 @@ import { CompositeScreenProps, useFocusEffect } from '@react-navigation/native';
 import { describeError } from '../api/client';
 import { Folder, FolderCounts } from '../api/types';
 import ActionSheet, { ActionSheetItem } from '../components/ActionSheet';
+import OfflineBanner from '../components/OfflineBanner';
 import { useDialog } from '../components/DialogProvider';
 import { useSettings } from '../context/SettingsContext';
+import { useConnectivity } from '../context/ConnectivityContext';
+import { RepoContext, repoListFolders } from '../data/notesRepository';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { useI18n } from '../i18n';
 import { MainTabParamList, RootStackParamList } from '../navigation/types';
@@ -32,11 +35,26 @@ type Props = CompositeScreenProps<
 const PAGE_SIZE = 10;
 
 export default function FoldersScreen({ navigation }: Props) {
-  const { client, workspace } = useSettings();
+  const { client, workspace, activeProfile } = useSettings();
+  const { isOnline, reportNetworkError, reportSuccess } = useConnectivity();
   const dialog = useDialog();
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles, colors);
   const { t } = useI18n();
+
+  const repoCtx = useMemo<RepoContext | null>(
+    () =>
+      client
+        ? {
+            client,
+            profileId: activeProfile?.id ?? null,
+            isOnline,
+            reportNetworkError,
+            reportSuccess,
+          }
+        : null,
+    [client, activeProfile, isOnline, reportNetworkError, reportSuccess],
+  );
 
   const [folders, setFolders] = useState<Folder[]>([]);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -52,15 +70,14 @@ export default function FoldersScreen({ navigation }: Props) {
 
   const load = useCallback(
     async (mode: 'initial' | 'refresh' = 'initial') => {
-      if (!client) return;
+      if (!client || !repoCtx) return;
       if (mode === 'initial') setIsLoading(true);
       if (mode === 'refresh') setIsRefreshing(true);
       try {
         const ws = workspace ?? undefined;
-        const [folderList, folderCounts] = await Promise.all([
-          client.listFolders(ws),
-          client.getFolderCounts(ws),
-        ]);
+        // Оффлайн — папки из локального кэша, счётчики недоступны
+        const { folders: folderList, fromCache } = await repoListFolders(repoCtx, ws);
+        const folderCounts = fromCache ? {} : await client.getFolderCounts(ws);
         setFolders(folderList);
         setVisibleCount(PAGE_SIZE);
         setCounts(folderCounts);
@@ -72,7 +89,7 @@ export default function FoldersScreen({ navigation }: Props) {
         setIsRefreshing(false);
       }
     },
-    [client, workspace],
+    [client, repoCtx, workspace],
   );
 
   useFocusEffect(
@@ -237,6 +254,7 @@ export default function FoldersScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
+      <OfflineBanner />
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
       <FlatList
         data={folders.slice(0, visibleCount)}

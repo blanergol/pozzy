@@ -56,6 +56,20 @@ jest.mock('../../context/SettingsContext', () => {
   };
 });
 
+// Мокаем connectivity: в тесте всегда «онлайн»
+jest.mock('../../context/ConnectivityContext', () => ({
+  useConnectivity: () => ({
+    isOnline: true,
+    reportNetworkError: jest.fn(),
+    reportSuccess: jest.fn(),
+  }),
+}));
+
+// AsyncStorage нужен offlineStore (репозиторий), в jest нет нативного модуля
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
+);
+
 // Мокаем DialogProvider: экран использует useDialog, в тесте провайдера нет
 jest.mock('../../components/DialogProvider', () => ({
   useDialog: () => ({

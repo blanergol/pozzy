@@ -18,10 +18,20 @@ import { describeError, LockConflictError } from '../api/client';
 import { Backlink, Folder, NoteDetails, SnapshotInfo } from '../api/types';
 import AttachmentsModal from '../components/AttachmentsModal';
 import ActionSheet, { ActionSheetItem } from '../components/ActionSheet';
+import OfflineBanner from '../components/OfflineBanner';
 import { useDialog } from '../components/DialogProvider';
 import { buildShareUrl } from '../utils/url';
 import { useAndroidKeyboardPadding } from '../utils/keyboard';
 import { useSettings } from '../context/SettingsContext';
+import { useConnectivity } from '../context/ConnectivityContext';
+import {
+  RepoContext,
+  isTempNoteId,
+  repoDeleteNote,
+  repoGetNote,
+  repoToggleFavorite,
+  repoUpdateNote,
+} from '../data/notesRepository';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { dateLocale, Locale, useI18n } from '../i18n';
 import { RootStackParamList } from '../navigation/types';
@@ -33,6 +43,8 @@ const EDITOR_SESSION_ID =
   'mobile-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 
 const LOCK_HEARTBEAT_MS = 45_000;
+// Задержка автосохранения после последнего ввода
+const AUTOSAVE_DEBOUNCE_MS = 1_000;
 
 function formatDateTime(value: string | null | undefined, locale: Locale): string {
   if (!value) return '';
@@ -50,6 +62,7 @@ function formatDateTime(value: string | null | undefined, locale: Locale): strin
 export default function NoteEditorScreen({ navigation, route }: Props) {
   const { noteId } = route.params;
   const { client, activeProfile } = useSettings();
+  const { isOnline, reportNetworkError, reportSuccess } = useConnectivity();
   const dialog = useDialog();
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles, colors);
@@ -57,6 +70,9 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   // endCoordinates.height уже не включает системный инсет навигации.
   const bottomPadding = useAndroidKeyboardPadding();
   const { t, locale } = useI18n();
+
+  // Локальная заметка, созданная оффлайн (ещё не существует на сервере)
+  const isTemp = isTempNoteId(noteId);
 
   const [note, setNote] = useState<NoteDetails | null>(null);
   const [heading, setHeading] = useState('');
@@ -67,6 +83,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [savedLocally, setSavedLocally] = useState(false);
   const [lockedByOther, setLockedByOther] = useState<string | null>(null);
   const [snapshotsVisible, setSnapshotsVisible] = useState(false);
   const [snapshots, setSnapshots] = useState<SnapshotInfo[] | null>(null);
@@ -80,6 +97,26 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
 
   const lockHeldRef = useRef(false);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Контекст репозитория всегда актуален через ref — колбэки load/save
+  // не пересоздаются при смене connectivity (иначе load() сбрасывал бы ввод).
+  const repoCtxRef = useRef<RepoContext | null>(null);
+  useEffect(() => {
+    repoCtxRef.current = client
+      ? {
+          client,
+          profileId: activeProfile?.id ?? null,
+          isOnline,
+          reportNetworkError,
+          reportSuccess,
+        }
+      : null;
+  }, [client, activeProfile, isOnline, reportNetworkError, reportSuccess]);
+
+  const isOnlineRef = useRef(isOnline);
+  useEffect(() => {
+    isOnlineRef.current = isOnline;
+  }, [isOnline]);
 
   const stopHeartbeat = useCallback(() => {
     if (heartbeatRef.current) {
@@ -96,7 +133,8 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   }, [client, noteId, stopHeartbeat]);
 
   const acquireLock = useCallback(async () => {
-    if (!client) return;
+    // Оффлайн и локальные заметки без серверного id локи не используют
+    if (!client || !isOnlineRef.current || isTempNoteId(noteId)) return;
     try {
       await client.acquireLock(noteId, EDITOR_SESSION_ID);
       lockHeldRef.current = true;
@@ -120,10 +158,11 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   }, [client, noteId, stopHeartbeat, t]);
 
   const load = useCallback(async () => {
-    if (!client) return;
+    const ctx = repoCtxRef.current;
+    if (!ctx) return;
     setIsLoading(true);
     try {
-      const fresh = await client.getNote(noteId);
+      const fresh = await repoGetNote(ctx, noteId);
       setNote(fresh);
       setHeading(fresh.heading ?? '');
       setTags(fresh.tags ?? '');
@@ -134,7 +173,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     } finally {
       setIsLoading(false);
     }
-  }, [client, noteId]);
+  }, [noteId]);
 
   useEffect(() => {
     load().then(acquireLock);
@@ -150,20 +189,35 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
       tags !== (note.tags ?? '') ||
       content !== (note.content ?? ''));
 
-  const handleSave = useCallback(async () => {
-    if (!client || !note || lockedByOther) return;
+  // ===== Автосохранение =====
+
+  const valuesRef = useRef({ heading: '', tags: '', content: '' });
+  const isDirtyRef = useRef(false);
+  const savingRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lockedRef = useRef<string | null>(null);
+  useEffect(() => {
+    lockedRef.current = lockedByOther;
+  }, [lockedByOther]);
+
+  const performSave = useCallback(async () => {
+    const ctx = repoCtxRef.current;
+    if (!ctx || savingRef.current) return;
+    if (!isDirtyRef.current || lockedRef.current) return;
+    savingRef.current = true;
     setIsSaving(true);
+    const { heading: h, tags: tg, content: c } = valuesRef.current;
+    const nextHeading = h.trim() || t('common.untitled');
     try {
-      const nextHeading = heading.trim() || t('common.untitled');
-      await client.updateNote(
-        note.id,
-        { heading: nextHeading, content, tags },
-        EDITOR_SESSION_ID,
-      );
-      setNote({ ...note, heading: nextHeading, content, tags });
+      await repoUpdateNote(ctx, noteId, { heading: nextHeading, content: c, tags: tg }, EDITOR_SESSION_ID);
+      // Сбрасываем «грязность» только по сохранённым значениям: если за время
+      // сохранения пользователь ввёл ещё — поля останутся отличающимися и
+      // автосохранение сработает повторно.
+      setNote((prev) => (prev ? { ...prev, heading: nextHeading, content: c, tags: tg } : prev));
       setSavedAt(
         new Date().toLocaleTimeString(dateLocale(locale), { hour: '2-digit', minute: '2-digit' }),
       );
+      setSavedLocally(!isOnlineRef.current || isTempNoteId(noteId));
       setError(null);
     } catch (e) {
       if (e instanceof LockConflictError) {
@@ -171,20 +225,60 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
       }
       setError(describeError(e));
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
+      if (isDirtyRef.current && !lockedRef.current) {
+        scheduleSaveRef.current?.();
+      }
     }
-  }, [client, note, heading, content, tags, lockedByOther, t, locale]);
+  }, [noteId, t, locale]);
+
+  const scheduleSave = useCallback(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      void performSave();
+    }, AUTOSAVE_DEBOUNCE_MS);
+  }, [performSave]);
+
+  const scheduleSaveRef = useRef(scheduleSave);
+  useEffect(() => {
+    scheduleSaveRef.current = scheduleSave;
+  }, [scheduleSave]);
+  const performSaveRef = useRef(performSave);
+  useEffect(() => {
+    performSaveRef.current = performSave;
+  }, [performSave]);
+
+  // Любое изменение полей → отложенное автосохранение
+  useEffect(() => {
+    valuesRef.current = { heading, tags, content };
+    isDirtyRef.current = isDirty;
+    if (isDirty && !lockedByOther) scheduleSave();
+  }, [heading, tags, content, isDirty, lockedByOther, scheduleSave]);
+
+  // При уходе с экрана — немедленный flush несохранённого
+  useEffect(
+    () => () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (isDirtyRef.current && !lockedRef.current) {
+        // fire-and-forget: оффлайн запишется в кэш, онлайн — попробует уйти на сервер
+        void performSaveRef.current();
+      }
+    },
+    [],
+  );
 
   const handleToggleFavorite = useCallback(async () => {
-    if (!client || !note) return;
+    const ctx = repoCtxRef.current;
+    if (!ctx || !note) return;
     const prev = favorite;
     setFavorite(prev ? 0 : 1);
     try {
-      await client.toggleFavorite(note.id);
+      await repoToggleFavorite(ctx, note.id);
     } catch {
       setFavorite(prev);
     }
-  }, [client, note, favorite]);
+  }, [note, favorite]);
 
   const handleDelete = useCallback(() => {
     if (!client || !note) return;
@@ -194,8 +288,10 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
         text: t('common.delete'),
         style: 'destructive',
         onPress: async () => {
+          const ctx = repoCtxRef.current;
+          if (!ctx) return;
           try {
-            await client.deleteNote(note.id);
+            await repoDeleteNote(ctx, note.id);
             navigation.goBack();
           } catch (e) {
             setError(describeError(e));
@@ -475,28 +571,13 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
               color={favorite ? colors.star : colors.textFaint}
             />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleActions} hitSlop={8} style={styles.headerButton} accessibilityLabel="note-actions">
-            <Ionicons name="ellipsis-horizontal" size={22} color={colors.accent} />
-          </TouchableOpacity>
+          {!isTemp ? (
+            <TouchableOpacity onPress={handleActions} hitSlop={8} style={styles.headerButton} accessibilityLabel="note-actions">
+              <Ionicons name="ellipsis-horizontal" size={22} color={colors.accent} />
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity onPress={handleDelete} hitSlop={8} style={styles.headerButton} accessibilityLabel="delete-note">
             <Ionicons name="trash-outline" size={22} color={colors.danger} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleSave}
-            hitSlop={8}
-            style={styles.headerButton}
-            disabled={!isDirty || isSaving || !!lockedByOther}
-            accessibilityLabel="save-note"
-          >
-            {isSaving ? (
-              <ActivityIndicator size="small" color={colors.accent} />
-            ) : (
-              <Ionicons
-                name="checkmark"
-                size={26}
-                color={isDirty && !lockedByOther ? colors.accent : colors.textFaint}
-              />
-            )}
           </TouchableOpacity>
         </View>
       ),
@@ -505,10 +586,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     navigation,
     note,
     favorite,
-    isDirty,
-    isSaving,
-    lockedByOther,
-    handleSave,
+    isTemp,
     handleToggleFavorite,
     handleDelete,
     handleActions,
@@ -542,6 +620,8 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <ScrollView style={styles.flex} contentContainerStyle={styles.container}>
+        <OfflineBanner />
+
         {lockedByOther ? (
           <View style={styles.lockBanner}>
             <Ionicons name="lock-closed" size={14} color={colors.lockBannerText} />
@@ -589,7 +669,11 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
         />
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        {savedAt && !isDirty ? (
+        {isSaving ? (
+          <Text style={styles.savedText}>{t('editor.saving')}</Text>
+        ) : !isDirty && savedLocally ? (
+          <Text style={styles.savedText}>{t('editor.savedLocally')}</Text>
+        ) : !isDirty && savedAt ? (
           <Text style={styles.savedText}>{t('editor.savedAt', { time: savedAt })}</Text>
         ) : null}
       </ScrollView>
@@ -731,7 +815,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
         </View>
       </Modal>
 
-      {client && note ? (
+      {client && note && !isTemp ? (
         <AttachmentsModal
           visible={attachmentsVisible}
           noteId={note.id}

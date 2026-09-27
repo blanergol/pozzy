@@ -8,9 +8,11 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { SettingsProvider, useSettings } from './src/context/SettingsContext';
+import { ConnectivityProvider } from './src/context/ConnectivityContext';
 import { useTheme } from './src/theme/ThemeContext';
 import { useI18n } from './src/i18n';
 import { DialogProvider } from './src/components/DialogProvider';
+import SyncManager from './src/components/SyncManager';
 import { AppLockProvider, AppLockScreen } from './src/security/AppLock';
 import { MainTabParamList, RootStackParamList } from './src/navigation/types';
 import SettingsScreen from './src/screens/SettingsScreen';
@@ -154,6 +156,7 @@ function ThemedNavigation() {
     <NavigationContainer theme={navTheme}>
       <DialogProvider>
         <AppLockProvider>
+          <SyncManager />
           <RootNavigator />
           <AppLockScreen />
         </AppLockProvider>
@@ -167,7 +170,9 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <SettingsProvider>
-        <ThemedNavigation />
+        <ConnectivityProvider>
+          <ThemedNavigation />
+        </ConnectivityProvider>
       </SettingsProvider>
     </SafeAreaProvider>
   );

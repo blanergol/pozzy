@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -16,8 +16,17 @@ import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { CompositeScreenProps, useFocusEffect } from '@react-navigation/native';
 import { describeError } from '../api/client';
 import ActionSheet, { ActionSheetItem } from '../components/ActionSheet';
+import OfflineBanner from '../components/OfflineBanner';
 import { useDialog } from '../components/DialogProvider';
 import { useSettings } from '../context/SettingsContext';
+import { useConnectivity } from '../context/ConnectivityContext';
+import {
+  RepoContext,
+  repoCreateNote,
+  repoDeleteNote,
+  repoListNotes,
+  repoToggleFavorite,
+} from '../data/notesRepository';
 import { NoteListItem, Workspace } from '../api/types';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { dateLocale, Locale, useI18n } from '../i18n';
@@ -44,13 +53,29 @@ function formatDate(value: string, locale: Locale): string {
 const PAGE_SIZE = 10;
 
 export default function NotesListScreen({ navigation, route }: Props) {
-  const { client, workspace, setWorkspace } = useSettings();
+  const { client, workspace, setWorkspace, activeProfile } = useSettings();
+  const { isOnline, reportNetworkError, reportSuccess } = useConnectivity();
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles, colors);
   const dialog = useDialog();
   const { t, locale } = useI18n();
   const folderId = route.params?.folderId;
   const folderName = route.params?.folderName;
+
+  // Репозиторий: онлайн — сервер, оффлайн — локальный кэш
+  const repoCtx = useMemo<RepoContext | null>(
+    () =>
+      client
+        ? {
+            client,
+            profileId: activeProfile?.id ?? null,
+            isOnline,
+            reportNetworkError,
+            reportSuccess,
+          }
+        : null,
+    [client, activeProfile, isOnline, reportNetworkError, reportSuccess],
+  );
 
   const [notes, setNotes] = useState<NoteListItem[]>([]);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -86,11 +111,11 @@ export default function NotesListScreen({ navigation, route }: Props) {
 
   const load = useCallback(
     async (query: string, mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
-      if (!client) return;
+      if (!repoCtx) return;
       if (mode === 'initial') setIsLoading(true);
       if (mode === 'refresh') setIsRefreshing(true);
       try {
-        const list = await client.listNotes({
+        const { notes: list } = await repoListNotes(repoCtx, {
           search: query.trim() || undefined,
           sort: 'updated_desc',
           workspace: workspace ?? undefined,
@@ -106,7 +131,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
         setIsRefreshing(false);
       }
     },
-    [client, workspace, folderId],
+    [repoCtx, workspace, folderId],
   );
 
   useFocusEffect(
@@ -237,7 +262,8 @@ export default function NotesListScreen({ navigation, route }: Props) {
   }, [notes]);
 
   const handleDeleteSelected = useCallback(() => {
-    if (!client || !selection || selection.size === 0) return;
+    if (!repoCtx || !selection || selection.size === 0) return;
+    const ctx = repoCtx;
     const ids = Array.from(selection);
     dialog.alert(
       t('list.deleteSelectedTitle', { count: ids.length }),
@@ -250,7 +276,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
           onPress: async () => {
             setIsDeleting(true);
             try {
-              const results = await Promise.allSettled(ids.map((id) => client.deleteNote(id)));
+              const results = await Promise.allSettled(ids.map((id) => repoDeleteNote(ctx, id)));
               const failed = results.filter((r) => r.status === 'rejected').length;
               if (failed > 0) {
                 setError(t('list.deleteFailed', { failed, total: ids.length }));
@@ -264,7 +290,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
         },
       ],
     );
-  }, [client, selection, load, search, dialog, t]);
+  }, [repoCtx, selection, load, search, dialog, t]);
 
   const allSelected = selection !== null && notes.length > 0 && selection.size === notes.length;
 
@@ -387,9 +413,9 @@ export default function NotesListScreen({ navigation, route }: Props) {
   ]);
 
   const handleCreate = async () => {
-    if (!client) return;
+    if (!repoCtx) return;
     try {
-      const id = await client.createNote({
+      const id = await repoCreateNote(repoCtx, {
         heading: t('list.newNote'),
         content: '',
         workspace: workspace ?? undefined,
@@ -402,13 +428,13 @@ export default function NotesListScreen({ navigation, route }: Props) {
   };
 
   const handleToggleFavorite = async (note: NoteListItem) => {
-    if (!client) return;
+    if (!repoCtx) return;
     // Оптимистичное обновление
     setNotes((prev) =>
       prev.map((n) => (n.id === note.id ? { ...n, favorite: n.favorite ? 0 : 1 } : n)),
     );
     try {
-      await client.toggleFavorite(note.id);
+      await repoToggleFavorite(repoCtx, note.id);
     } catch {
       setNotes((prev) =>
         prev.map((n) => (n.id === note.id ? { ...n, favorite: note.favorite } : n)),
@@ -484,6 +510,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
 
   return (
     <View style={styles.container}>
+      <OfflineBanner />
       <View style={styles.searchBox}>
         <Ionicons name="search" size={18} color={colors.textFaint} style={styles.searchIcon} />
         <TextInput
