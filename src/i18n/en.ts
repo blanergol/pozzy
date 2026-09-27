@@ -27,6 +27,19 @@ export const en: Record<TranslationKey, string> = {
 
   'offline.banner': 'Offline mode: changes are saved locally and will sync when reconnected',
 
+  'onboarding.slide1.title': 'Your notes. Your server.',
+  'onboarding.slide1.text': 'Pozzy is a mobile client for self-hosted Poznote. Your notes live on your own server, not in someone else’s cloud — full privacy and control over your data.',
+  'onboarding.slide2.title': 'Everything for your notes',
+  'onboarding.slide2.item1': 'Notes with tags, folders and favorites',
+  'onboarding.slide2.item2': 'Full offline mode — edits sync when you’re back online',
+  'onboarding.slide2.item3': 'Reminders, version history, public links',
+  'onboarding.slide2.item4': 'Search across all notes',
+  'onboarding.slide3.title': 'AI agent — your assistant',
+  'onboarding.slide3.text': 'Ask in plain language: “summarize this note”, “merge my vacation notes”, “organize notes into folders”. The agent reads and edits notes via tools, and destructive actions always require your confirmation.',
+  'onboarding.slide3.hint': 'Enabled in Settings; works with any OpenAI-compatible API key',
+  'onboarding.slide3.example': 'Summarize my trip notes',
+  'onboarding.start': 'Get started',
+
   'settings.servers': 'Servers',
   'settings.addServer': 'Add server',
   'settings.newServer': 'New server',

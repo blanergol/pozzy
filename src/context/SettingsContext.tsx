@@ -16,11 +16,13 @@ import {
   DEFAULT_AI_SETTINGS,
   loadAISettings,
   loadLanguageMode,
+  loadOnboardingSeen,
   loadSelectedWorkspace,
   loadServers,
   loadThemeMode,
   saveAISettings,
   saveLanguageMode,
+  saveOnboardingSeen,
   saveSelectedWorkspace,
   saveServers,
   saveThemeMode,
@@ -54,6 +56,10 @@ interface SettingsContextValue {
   /** Настройки OpenAI-совместимого API для AI-чата. */
   aiSettings: AISettings;
   saveAiSettings: (settings: AISettings) => void;
+  /** true = онбординг уже показан (не показываем повторно). */
+  onboardingSeen: boolean;
+  /** Отметить онбординг как пройденный (пишется в кэш). */
+  completeOnboarding: () => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -69,17 +75,19 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const [languageMode, setLanguageModeState] = useState<LanguageMode>('system');
   const [aiSettings, setAiSettings] = useState<AISettings>(DEFAULT_AI_SETTINGS);
+  const [onboardingSeen, setOnboardingSeen] = useState(true); // до загрузки не показываем
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([loadServers(), loadSelectedWorkspace(), loadThemeMode(), loadLanguageMode(), loadAISettings()])
-      .then(([serversStorage, loadedWorkspace, loadedTheme, loadedLanguage, loadedAI]) => {
+    Promise.all([loadServers(), loadSelectedWorkspace(), loadThemeMode(), loadLanguageMode(), loadAISettings(), loadOnboardingSeen()])
+      .then(([serversStorage, loadedWorkspace, loadedTheme, loadedLanguage, loadedAI, loadedOnboarding]) => {
         setProfiles(serversStorage.servers);
         setActiveId(serversStorage.activeId);
         setWorkspaceState(loadedWorkspace);
         setThemeModeState(loadedTheme);
         setLanguageModeState(loadedLanguage);
         setAiSettings(loadedAI);
+        setOnboardingSeen(loadedOnboarding);
       })
       .finally(() => setIsLoading(false));
   }, []);
@@ -151,6 +159,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     saveAISettings(settings).catch(() => {});
   }, []);
 
+  const completeOnboarding = useCallback(() => {
+    setOnboardingSeen(true);
+    saveOnboardingSeen().catch(() => {});
+  }, []);
+
   const activeProfile = useMemo(
     () => profiles.find((p) => p.id === activeId) ?? null,
     [profiles, activeId],
@@ -174,6 +187,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setLanguageMode,
       aiSettings,
       saveAiSettings,
+      onboardingSeen,
+      completeOnboarding,
     }),
     [
       profiles,
@@ -191,6 +206,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setLanguageMode,
       aiSettings,
       saveAiSettings,
+      onboardingSeen,
+      completeOnboarding,
     ],
   );
 

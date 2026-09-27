@@ -18,6 +18,7 @@ const THEME_MODE_KEY = 'poznote.themeMode.v1';
 const LANGUAGE_MODE_KEY = 'poznote.languageMode.v1';
 const WORKSPACE_KEY = 'poznote.selectedWorkspace.v1';
 const AI_SETTINGS_KEY = 'poznote.aiSettings.v1';
+const ONBOARDING_KEY = 'poznote.onboarding.v1';
 // legacy формат первой версии приложения (один сервер)
 const LEGACY_SETTINGS_KEY = 'poznote.serverSettings.v1';
 
@@ -147,4 +148,17 @@ export async function loadAISettings(): Promise<AISettings> {
 
 export async function saveAISettings(settings: AISettings): Promise<void> {
   await AsyncStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(settings));
+}
+
+/** Онбординг показывается один раз — флаг «уже видели». */
+export async function loadOnboardingSeen(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(ONBOARDING_KEY)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export async function saveOnboardingSeen(): Promise<void> {
+  await AsyncStorage.setItem(ONBOARDING_KEY, '1');
 }

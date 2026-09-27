@@ -18,6 +18,7 @@ import { MainTabParamList, RootStackParamList } from './src/navigation/types';
 import SettingsScreen from './src/screens/SettingsScreen';
 import NotesListScreen from './src/screens/NotesListScreen';
 import NoteEditorScreen from './src/screens/NoteEditorScreen';
+import OnboardingScreen from './src/screens/OnboardingScreen';
 import FoldersScreen from './src/screens/FoldersScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import TrashScreen from './src/screens/TrashScreen';
@@ -166,12 +167,37 @@ function ThemedNavigation() {
   );
 }
 
+function Root() {
+  const { onboardingSeen, isLoading, completeOnboarding } = useSettings();
+  const { colors } = useTheme();
+
+  if (isLoading) {
+    return (
+      <View style={[styles.splash, { backgroundColor: colors.bg }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
+      </View>
+    );
+  }
+
+  // Онбординг — один раз при первом запуске, до настроек сервера
+  if (!onboardingSeen) {
+    return (
+      <>
+        <OnboardingScreen onFinish={completeOnboarding} />
+        <StatusBar style="light" />
+      </>
+    );
+  }
+
+  return <ThemedNavigation />;
+}
+
 export default function App() {
   return (
     <SafeAreaProvider>
       <SettingsProvider>
         <ConnectivityProvider>
-          <ThemedNavigation />
+          <Root />
         </ConnectivityProvider>
       </SettingsProvider>
     </SafeAreaProvider>
