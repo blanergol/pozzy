@@ -74,10 +74,13 @@ interface SlideData {
 
 export default function OnboardingScreen({ onFinish }: { onFinish: () => void }) {
   const { t } = useI18n();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [page, setPage] = useState(0);
   const listRef = useRef<FlatList<SlideData>>(null);
+  // Высота слайда = окно минус инсеты и панель точек (иначе на web
+  // flex-растяжение не срабатывает и контент прижимается к верху)
+  const slideHeight = height - insets.top - insets.bottom - 16 - 40;
 
   const slides: SlideData[] = [
     {
@@ -107,7 +110,7 @@ export default function OnboardingScreen({ onFinish }: { onFinish: () => void })
   ];
 
   const renderSlide = ({ item, index }: { item: SlideData; index: number }) => (
-    <View style={[styles.slide, { width }]}>
+    <View style={[styles.slide, { width, height: slideHeight }]}>
       <View style={styles.graphicArea}>{item.graphic}</View>
       <Text style={styles.title}>{item.title}</Text>
       {item.text ? <Text style={styles.text}>{item.text}</Text> : null}
