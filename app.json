@@ -4,7 +4,7 @@
     "slug": "pozzy",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icons/store/app-store-1024.png",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
@@ -13,10 +13,10 @@
     "android": {
       "package": "com.pozzy.mobile",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#0A4A42",
+        "foregroundImage": "./assets/icons/android/adaptive-png/foreground.png",
+        "backgroundImage": "./assets/icons/android/adaptive-png/background.png",
+        "monochromeImage": "./assets/icons/android/adaptive-png/monochrome.png"
       },
       "predictiveBackGestureEnabled": false
     },
