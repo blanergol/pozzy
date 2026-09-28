@@ -1,6 +1,6 @@
 # Pozzy
 
-**An unofficial cross-platform mobile client for the self-hosted [Poznote](https://github.com/timothepoznanski/poznote) note-taking server — iOS, Android, and a one-command web build for quick testing on Windows.**
+**An unofficial cross-platform mobile client for the self-hosted [Poznote](https://github.com/timothepoznanski/poznote) note-taking server — iOS & Android.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android%20%7C%20Web-blue.svg)](#getting-started)
@@ -10,12 +10,12 @@
 
 Pozzy talks to your own Poznote server over its REST API (HTTP Basic Auth + `X-User-ID`) — no cloud, no third parties, your notes stay on your hardware. Built with React Native + Expo (Node.js toolchain), so development and testing run entirely on Windows.
 
-<p>
-  <img src="docs/screenshots/notes-dark.png" width="250" alt="Notes list (dark theme)">
-  &nbsp;
-  <img src="docs/screenshots/folders-dark.png" width="250" alt="Folders (dark theme)">
-  &nbsp;
-  <img src="docs/screenshots/settings-dark.png" width="250" alt="Settings (dark theme)">
+<p align="center">
+  <img src="docs/screenshots/01-notes-dark.png" width="240" alt="Notes list (dark theme)">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/06-chat-dark.png" width="240" alt="AI agent chat">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/04-settings-dark.png" width="240" alt="Settings">
 </p>
 
 ## Features
@@ -152,7 +152,7 @@ node scripts/e2e.js                 # end-to-end walkthrough (needs expo web on 
 
 CI/CD (GitHub Actions, see [docs/CI-RELEASE.md](docs/CI-RELEASE.md)): pushes and PRs to `master` run type-check + unit tests; pushing a `v*` tag additionally builds a signed Android APK and publishes it as a GitHub Release.
 
-The E2E suite (`scripts/e2e.js`) drives the real app in a browser via Playwright against a full stateful mock of the Poznote API (`scripts/mock-server.js`): connection, search, workspaces, notifications, every editor action, folders, trash, multi-select, and settings. Reset the mock between runs with `GET /__reset`. For the demo dataset used in the screenshots above, run the mock with `node scripts/mock-server.js 8902 showcase` (and `scripts/screenshots.js` to regenerate them).
+The E2E suite (`scripts/e2e.js`) drives the real app in a browser via Playwright against a full stateful mock of the Poznote API (`scripts/mock-server.js`): connection, search, workspaces, notifications, every editor action, folders, trash, multi-select, and settings. Reset the mock between runs with `GET /__reset`. For the demo dataset used in the screenshots above, run the mock with `node scripts/mock-server.js 8902 showcase` (and `scripts/screenshots-store.js` to regenerate them — 1440×3120, store-ready).
 
 ## Project structure
 
