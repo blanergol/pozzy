@@ -2,7 +2,7 @@
   "expo": {
     "name": "Pozzy",
     "slug": "pozzy",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "scheme": "pozzy",
     "orientation": "portrait",
     "icon": "./assets/icons/store/app-store-1024.png",

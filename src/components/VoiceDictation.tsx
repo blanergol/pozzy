@@ -1,11 +1,22 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Keyboard, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native';
 import {
   ExpoSpeechRecognitionModule,
   useSpeechRecognitionEvent,
 } from 'expo-speech-recognition';
 import { useTheme } from '../theme/ThemeContext';
+
+// useIsFocused падает вне навигационного контекста (unit-тесты) — тогда считаем экран видимым
+function useSafeIsFocused(): boolean {
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    return useIsFocused();
+  } catch {
+    return true;
+  }
+}
 
 export type VoiceErrorKind = 'permission' | 'generic';
 
@@ -15,20 +26,30 @@ interface UseVoiceDictationOptions {
   /** Текущий распознанный текст сессии (финальные фразы + текущий interim). */
   onTranscript: (text: string) => void;
   onError?: (kind: VoiceErrorKind) => void;
+  /**
+   * События обрабатываются только когда enabled=true (по умолчанию — когда экран
+   * в фокусе). События модуля глобальны: без этого диктовка в редакторе
+   * попадала бы и в поле ввода чата (оба экрана смонтированы одновременно).
+   */
+  enabled?: boolean;
 }
 
 /**
  * Диктовка: onTranscript получает весь текст текущей сессии (не дельту) —
  * потребитель сам решает, куда его подставить (поле ввода, позиция курсора).
  */
-export function useVoiceDictation({ lang, onTranscript, onError }: UseVoiceDictationOptions) {
+export function useVoiceDictation({ lang, onTranscript, onError, enabled }: UseVoiceDictationOptions) {
+  const focused = useSafeIsFocused();
+  const active = enabled ?? focused;
   const [available, setAvailable] = useState(false);
   const [listening, setListening] = useState(false);
   const finalRef = useRef('');
   const listeningRef = useRef(false);
+  const enabledRef = useRef(enabled);
   const onTranscriptRef = useRef(onTranscript);
   const onErrorRef = useRef(onError);
   listeningRef.current = listening;
+  enabledRef.current = active;
   onTranscriptRef.current = onTranscript;
   onErrorRef.current = onError;
 
@@ -43,9 +64,22 @@ export function useVoiceDictation({ lang, onTranscript, onError }: UseVoiceDicta
     };
   }, []);
 
-  useSpeechRecognitionEvent('start', () => setListening(true));
-  useSpeechRecognitionEvent('end', () => setListening(false));
+  // Экран ушёл из фокуса посреди диктовки — обрываем, чтобы не писать «в никуда»
+  useEffect(() => {
+    if (!active && listeningRef.current) {
+      ExpoSpeechRecognitionModule.abort();
+      setListening(false);
+    }
+  }, [active]);
+
+  useSpeechRecognitionEvent('start', () => {
+    if (enabledRef.current) setListening(true);
+  });
+  useSpeechRecognitionEvent('end', () => {
+    if (enabledRef.current) setListening(false);
+  });
   useSpeechRecognitionEvent('result', (event) => {
+    if (!enabledRef.current) return;
     const transcript = event.results[0]?.transcript.trim() ?? '';
     if (event.isFinal && transcript) {
       finalRef.current = [finalRef.current, transcript].filter(Boolean).join(' ');
@@ -54,6 +88,7 @@ export function useVoiceDictation({ lang, onTranscript, onError }: UseVoiceDicta
     onTranscriptRef.current([finalRef.current, interim].filter(Boolean).join(' '));
   });
   useSpeechRecognitionEvent('error', (event) => {
+    if (!enabledRef.current) return;
     setListening(false);
     if (event.error === 'not-allowed') {
       onErrorRef.current?.('permission');
