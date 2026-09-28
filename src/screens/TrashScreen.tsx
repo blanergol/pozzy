@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -18,6 +18,7 @@ import OfflineBanner from '../components/OfflineBanner';
 import { useSettings } from '../context/SettingsContext';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { dateLocale, Locale, useI18n } from '../i18n';
+import { bumpDataVersion, freshMark, isFresh, STALE_MARK } from '../utils/freshness';
 import { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Trash'>;
@@ -39,9 +40,10 @@ export default function TrashScreen({ navigation }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lastLoadRef = useRef(STALE_MARK);
 
   const load = useCallback(
-    async (mode: 'initial' | 'refresh' = 'initial') => {
+    async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
       if (!client) return;
       if (mode === 'initial') setIsLoading(true);
       if (mode === 'refresh') setIsRefreshing(true);
@@ -49,6 +51,7 @@ export default function TrashScreen({ navigation }: Props) {
         const list = await client.listTrash(workspace ?? undefined);
         setNotes(list);
         setError(null);
+        lastLoadRef.current = freshMark();
       } catch (e) {
         setError(describeError(e));
       } finally {
@@ -61,7 +64,9 @@ export default function TrashScreen({ navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      // Повторный фокус: без спиннера, а в пределах TTL — вообще без сети
+      if (isFresh(lastLoadRef.current)) return;
+      load(lastLoadRef.current.at === 0 ? 'initial' : 'silent');
     }, [load]),
   );
 
@@ -94,6 +99,7 @@ export default function TrashScreen({ navigation }: Props) {
         onPress: async () => {
           try {
             const results = await Promise.allSettled(notes.map((n) => client.restoreNote(n.id)));
+            bumpDataVersion();
             const failed = results.filter((r) => r.status === 'rejected').length;
             if (failed > 0) {
               setError(t('trash.restoreFailed', { failed, total: notes.length }));
@@ -133,6 +139,7 @@ export default function TrashScreen({ navigation }: Props) {
         onPress: async () => {
           try {
             await client.restoreNote(note.id);
+            bumpDataVersion();
             await load('refresh');
           } catch (e) {
             setError(describeError(e));

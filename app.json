@@ -2,7 +2,7 @@
   "expo": {
     "name": "Pozzy",
     "slug": "pozzy",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/icons/store/app-store-1024.png",
     "userInterfaceStyle": "automatic",
@@ -27,6 +27,13 @@
       "expo-sharing",
       "expo-asset",
       "expo-localization",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Разрешить Pozzy использовать микрофон для голосового ввода.",
+          "speechRecognitionPermission": "Разрешить Pozzy распознавать речь для голосового ввода."
+        }
+      ],
       "./plugins/withReleaseSigning"
     ]
   }

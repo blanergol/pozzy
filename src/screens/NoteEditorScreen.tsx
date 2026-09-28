@@ -33,6 +33,7 @@ import {
   repoUpdateNote,
 } from '../data/notesRepository';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
+import { bumpDataVersion } from '../utils/freshness';
 import { dateLocale, Locale, useI18n } from '../i18n';
 import { RootStackParamList } from '../navigation/types';
 
@@ -476,6 +477,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
             onPress: async () => {
               try {
                 await client.restoreSnapshot(note.id, { snapshotKey: snapshot.snapshot_key });
+                bumpDataVersion();
                 setSnapshotsVisible(false);
                 await load();
               } catch (e) {
@@ -525,6 +527,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
         } else {
           await client.moveNoteToFolder(note.id, folder.id);
         }
+        bumpDataVersion();
         await load();
       } catch (e) {
         setError(describeError(e));

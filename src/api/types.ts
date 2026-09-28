@@ -314,6 +314,9 @@ export interface GitSyncConfigStatus {
   branch?: string;
   hasToken?: boolean;
   provider?: string;
+  apiBase?: string;
+  authorName?: string;
+  authorEmail?: string;
   autoPush?: boolean;
   autoPull?: boolean;
 }
@@ -342,14 +345,18 @@ export interface GitSyncProgress {
   [key: string]: unknown;
 }
 
+/** PUT /git-sync/config: поля сохраняются по одному — отсутствующие ключи сервер не трогает,
+ *  пустая строка очищает значение. Пустой token при редактировании не отправляем, чтобы
+ *  не затирать сохранённый. */
 export interface GitSyncConfig {
-  repository_url?: string;
-  branch?: string;
-  username?: string;
+  provider?: 'github' | 'gitlab' | 'forgejo';
+  repo?: string;
   token?: string;
-  auto_push?: boolean;
-  auto_pull?: boolean;
-  enabled?: boolean;
+  branch?: string;
+  api_base?: string;
+  author_name?: string;
+  author_email?: string;
+  workspaces?: string[] | null;
   [key: string]: unknown;
 }
 

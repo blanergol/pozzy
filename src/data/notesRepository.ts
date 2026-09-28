@@ -9,6 +9,7 @@ import {
   resolveNoteId,
   saveOfflineData,
 } from '../storage/offlineStore';
+import { bumpDataVersion } from '../utils/freshness';
 
 /**
  * Контекст вызова репозитория. profileId === null (нет активного профиля —
@@ -239,6 +240,7 @@ export async function repoUpdateNote(
   payload: UpdateNotePayload,
   editorSessionId?: string,
 ): Promise<void> {
+  bumpDataVersion();
   if (ctx.profileId) {
     const data = await loadOfflineData(ctx.profileId);
     const resolvedId = resolveNoteId(data, id);
@@ -313,6 +315,7 @@ export async function repoCreateNote(
   ctx: RepoContext,
   payload: CreateNotePayload,
 ): Promise<number> {
+  bumpDataVersion();
   if (ctx.profileId && !ctx.isOnline) {
     const tempId = -Date.now();
     await withData(ctx, (d) => {
@@ -384,6 +387,7 @@ export async function repoCreateNote(
 }
 
 export async function repoDeleteNote(ctx: RepoContext, id: number): Promise<void> {
+  bumpDataVersion();
   if (ctx.profileId) {
     const data = await loadOfflineData(ctx.profileId);
     const resolvedId = resolveNoteId(data, id);
@@ -426,6 +430,7 @@ export async function repoDeleteNote(ctx: RepoContext, id: number): Promise<void
 }
 
 export async function repoToggleFavorite(ctx: RepoContext, id: number): Promise<void> {
+  bumpDataVersion();
   if (ctx.profileId) {
     const data = await loadOfflineData(ctx.profileId);
     const resolvedId = resolveNoteId(data, id);

@@ -169,11 +169,18 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     [profiles, activeId],
   );
 
+  // Клиент зависит только от профиля: смена темы/языка не должна его
+  // пересоздавать — иначе все экраны заново дёргают API по смене identity.
+  const client = useMemo(
+    () => (activeProfile ? new PoznoteClient(activeProfile) : null),
+    [activeProfile],
+  );
+
   const value = useMemo<SettingsContextValue>(
     () => ({
       profiles,
       activeProfile,
-      client: activeProfile ? new PoznoteClient(activeProfile) : null,
+      client,
       isLoading,
       workspace,
       setWorkspace,
@@ -193,6 +200,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     [
       profiles,
       activeProfile,
+      client,
       isLoading,
       workspace,
       setWorkspace,

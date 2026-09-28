@@ -30,6 +30,7 @@ import {
 import { NoteListItem, Workspace } from '../api/types';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { dateLocale, Locale, useI18n } from '../i18n';
+import { bumpDataVersion, freshMark, isFresh, STALE_MARK } from '../utils/freshness';
 import { MainTabParamList, RootStackParamList } from '../navigation/types';
 
 type Props = CompositeScreenProps<
@@ -98,6 +99,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
   const [selection, setSelection] = useState<Set<number> | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastLoadRef = useRef(STALE_MARK);
 
   const loadUnreadCount = useCallback(async () => {
     if (!client) return;
@@ -124,6 +126,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
         setNotes(list);
         setVisibleCount(PAGE_SIZE);
         setError(null);
+        lastLoadRef.current = freshMark();
       } catch (e) {
         setError(describeError(e));
       } finally {
@@ -136,6 +139,8 @@ export default function NotesListScreen({ navigation, route }: Props) {
 
   useFocusEffect(
     useCallback(() => {
+      // Повторный фокус в пределах TTL и без мутаций — сеть не дёргаем
+      if (isFresh(lastLoadRef.current)) return;
       load(search, 'silent');
       loadUnreadCount();
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -185,6 +190,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
         await client.renameWorkspace(oldName, name);
         if (workspace === oldName) setWorkspace(name);
       }
+      bumpDataVersion();
       setWorkspaces(await client.listWorkspaces());
       setWsNameModal(null);
     } catch (e) {
@@ -206,6 +212,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
             try {
               await client.deleteWorkspace(w.name);
               if (workspace === w.name) setWorkspace(null);
+              bumpDataVersion();
               setWorkspaces(await client.listWorkspaces());
             } catch (e) {
               setError(describeError(e));

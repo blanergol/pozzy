@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -22,6 +22,7 @@ import { useDialog } from '../components/DialogProvider';
 import { useSettings } from '../context/SettingsContext';
 import { useConnectivity } from '../context/ConnectivityContext';
 import { RepoContext, repoListFolders } from '../data/notesRepository';
+import { bumpDataVersion, freshMark, isFresh, STALE_MARK } from '../utils/freshness';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { useI18n } from '../i18n';
 import { MainTabParamList, RootStackParamList } from '../navigation/types';
@@ -67,9 +68,10 @@ export default function FoldersScreen({ navigation }: Props) {
   const [nameValue, setNameValue] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [actionsFolder, setActionsFolder] = useState<Folder | null>(null);
+  const lastLoadRef = useRef(STALE_MARK);
 
   const load = useCallback(
-    async (mode: 'initial' | 'refresh' = 'initial') => {
+    async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
       if (!client || !repoCtx) return;
       if (mode === 'initial') setIsLoading(true);
       if (mode === 'refresh') setIsRefreshing(true);
@@ -82,6 +84,7 @@ export default function FoldersScreen({ navigation }: Props) {
         setVisibleCount(PAGE_SIZE);
         setCounts(folderCounts);
         setError(null);
+        lastLoadRef.current = freshMark();
       } catch (e) {
         setError(describeError(e));
       } finally {
@@ -94,7 +97,9 @@ export default function FoldersScreen({ navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      // Повторный фокус: без спиннера, а в пределах TTL — вообще без сети
+      if (isFresh(lastLoadRef.current)) return;
+      load(lastLoadRef.current.at === 0 ? 'initial' : 'silent');
     }, [load]),
   );
 
@@ -138,6 +143,7 @@ export default function FoldersScreen({ navigation }: Props) {
       } else {
         await client.renameFolder(nameModal.folder.id, name);
       }
+      bumpDataVersion();
       setNameModal(null);
       await load('refresh');
     } catch (e) {
@@ -172,6 +178,7 @@ export default function FoldersScreen({ navigation }: Props) {
               onPress: async () => {
                 try {
                   await client.emptyFolder(folder.id);
+                  bumpDataVersion();
                   await load('refresh');
                 } catch (e) {
                   setError(describeError(e));
@@ -193,6 +200,7 @@ export default function FoldersScreen({ navigation }: Props) {
               onPress: async () => {
                 try {
                   await client.deleteFolder(folder.id);
+                  bumpDataVersion();
                   await load('refresh');
                 } catch (e) {
                   setError(describeError(e));

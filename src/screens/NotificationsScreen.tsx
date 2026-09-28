@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -17,6 +17,7 @@ import { useDialog } from '../components/DialogProvider';
 import { useSettings } from '../context/SettingsContext';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { dateLocale, Locale, useI18n } from '../i18n';
+import { bumpDataVersion, freshMark, isFresh, STALE_MARK } from '../utils/freshness';
 import { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Notifications'>;
@@ -43,9 +44,10 @@ export default function NotificationsScreen({ navigation }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lastLoadRef = useRef(STALE_MARK);
 
   const load = useCallback(
-    async (mode: 'initial' | 'refresh' = 'initial') => {
+    async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
       if (!client) return;
       if (mode === 'initial') setIsLoading(true);
       if (mode === 'refresh') setIsRefreshing(true);
@@ -53,6 +55,7 @@ export default function NotificationsScreen({ navigation }: Props) {
         const list = await client.listNotifications(workspace ?? undefined);
         setItems(list);
         setError(null);
+        lastLoadRef.current = freshMark();
       } catch (e) {
         setError(describeError(e));
       } finally {
@@ -65,7 +68,9 @@ export default function NotificationsScreen({ navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      // Повторный фокус: без спиннера, а в пределах TTL — вообще без сети
+      if (isFresh(lastLoadRef.current)) return;
+      load(lastLoadRef.current.at === 0 ? 'initial' : 'silent');
     }, [load]),
   );
 
@@ -78,6 +83,7 @@ export default function NotificationsScreen({ navigation }: Props) {
         onPress: async () => {
           try {
             await client.dismissAllNotifications();
+            bumpDataVersion();
             await load('refresh');
           } catch (e) {
             setError(describeError(e));
@@ -104,6 +110,7 @@ export default function NotificationsScreen({ navigation }: Props) {
     setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, is_read: 1 } : n)));
     try {
       await client.markNotificationRead(item.id);
+      bumpDataVersion();
     } catch {
       setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, is_read: 0 } : n)));
     }
@@ -115,6 +122,7 @@ export default function NotificationsScreen({ navigation }: Props) {
     setItems((cur) => cur.filter((n) => n.id !== item.id));
     try {
       await client.dismissNotification(item.id);
+      bumpDataVersion();
     } catch {
       setItems(prev);
     }

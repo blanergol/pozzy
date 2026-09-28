@@ -1,6 +1,7 @@
 import { PoznoteClient } from '../api/client';
 import { NoteListItem } from '../api/types';
 import { PendingOp, loadOfflineData, resolveNoteId, saveOfflineData } from '../storage/offlineStore';
+import { bumpDataVersion } from '../utils/freshness';
 
 function isNetworkError(e: unknown): boolean {
   return e instanceof Error && e.message === 'network';
@@ -132,6 +133,8 @@ export async function syncNow(
       }
       await saveOfflineData(profileId, data);
       callbacks.reportSuccess?.();
+      // кэш изменился — экраны перечитают данные при следующем фокусе
+      bumpDataVersion();
     } catch (e) {
       if (isNetworkError(e)) callbacks.reportNetworkError?.();
     }

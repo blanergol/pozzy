@@ -1,7 +1,8 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   RefreshControl,
   ScrollView,
@@ -17,10 +18,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { describeError, normalizeBaseUrl, PoznoteClient } from '../api/client';
-import { BackupFile, GitSyncStatus, SharedItem, SystemInfo } from '../api/types';
+import { BackupFile, GitSyncConfig, GitSyncStatus, SharedItem, SystemInfo } from '../api/types';
 import ActionSheet, { ActionSheetItem } from '../components/ActionSheet';
 import { useDialog } from '../components/DialogProvider';
 import { buildShareUrl } from '../utils/url';
+import { freshMark, isFresh } from '../utils/freshness';
 import { useSettings } from '../context/SettingsContext';
 import { useAppLock } from '../security/AppLock';
 import { ServerProfile } from '../storage/settings';
@@ -103,6 +105,17 @@ export default function SettingsScreen({ navigation }: Props) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const sectionsLoadedRef = useRef({ at: 0, version: -1 });
+
+  // Форма настройки Git Sync
+  const [gitModalVisible, setGitModalVisible] = useState(false);
+  const [gitProvider, setGitProvider] = useState<'github' | 'gitlab' | 'forgejo'>('github');
+  const [gitRepo, setGitRepo] = useState('');
+  const [gitBranch, setGitBranch] = useState('main');
+  const [gitToken, setGitToken] = useState('');
+  const [gitApiBase, setGitApiBase] = useState('');
+  const [gitAuthorName, setGitAuthorName] = useState('');
+  const [gitAuthorEmail, setGitAuthorEmail] = useState('');
 
   const profileDisplayName = (p: ServerProfile) =>
     `${p.username}@${p.baseUrl.replace(/^https?:\/\//, '')}`;
@@ -226,6 +239,7 @@ export default function SettingsScreen({ navigation }: Props) {
         if (git.status === 'fulfilled') setGitStatus(git.value);
         if (backupList.status === 'fulfilled') setBackups(backupList.value);
         if (sharedList.status === 'fulfilled') setShared(sharedList.value);
+        sectionsLoadedRef.current = freshMark();
       } catch {
         // секции вторичны — ошибки показываем молча
       } finally {
@@ -237,7 +251,8 @@ export default function SettingsScreen({ navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      loadSections();
+      // Повторный заход в настройки не дёргает 4 запроса, если данные свежие
+      if (!isFresh(sectionsLoadedRef.current)) loadSections();
     }, [loadSections]),
   );
 
@@ -287,6 +302,61 @@ export default function SettingsScreen({ navigation }: Props) {
         dialog.alert(t('settings.done'), t('settings.pullDone'));
       }
     });
+
+  const openGitConfig = () => {
+    const cfg = gitStatus?.config;
+    const provider = cfg?.provider;
+    setGitProvider(provider === 'gitlab' || provider === 'forgejo' ? provider : 'github');
+    setGitRepo(cfg?.repo ?? '');
+    setGitBranch(cfg?.branch ?? 'main');
+    setGitToken('');
+    setGitApiBase(cfg?.apiBase ?? '');
+    setGitAuthorName(cfg?.authorName ?? '');
+    setGitAuthorEmail(cfg?.authorEmail ?? '');
+    setGitModalVisible(true);
+  };
+
+  const canSaveGit = gitRepo.trim().length > 0 && !isBusy;
+
+  const handleSaveGitConfig = () =>
+    runAction(async () => {
+      const body: GitSyncConfig = {
+        provider: gitProvider,
+        repo: gitRepo.trim(),
+        branch: gitBranch.trim() || 'main',
+        author_name: gitAuthorName.trim(),
+        author_email: gitAuthorEmail.trim(),
+      };
+      if (gitProvider !== 'github') body.api_base = gitApiBase.trim();
+      // Пустой токен не отправляем — сервер оставит сохранённый
+      if (gitToken.trim()) body.token = gitToken.trim();
+      await client!.updateGitSyncConfig(body);
+      setGitModalVisible(false);
+      await loadSections('refresh');
+      dialog.alert(t('settings.done'), t('settings.gitSaved'));
+    });
+
+  const handleDeleteGitConfig = () => {
+    dialog.alert(t('settings.gitDeleteTitle'), t('settings.gitDeleteMessage'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.delete'),
+        style: 'destructive',
+        onPress: () =>
+          runAction(async () => {
+            // DELETE-эндпоинта у API нет: пустые значения очищают поля на сервере
+            await client!.updateGitSyncConfig({
+              repo: '',
+              token: '',
+              api_base: '',
+              author_name: '',
+              author_email: '',
+            });
+            await loadSections('refresh');
+          }),
+      },
+    ]);
+  };
 
   const handleCreateBackup = () =>
     runAction(async () => {
@@ -663,20 +733,34 @@ export default function SettingsScreen({ navigation }: Props) {
                   </Text>
                 </View>
               ) : null}
-              <View style={styles.buttonRow}>
-                <TouchableOpacity style={styles.actionRow} onPress={() => handleGitAction('test')}>
-                  <Ionicons name="git-network-outline" size={20} color={colors.accent} />
-                  <Text style={styles.actionText}>{t('settings.test')}</Text>
+              {gitStatus?.enabled !== false ? (
+                <TouchableOpacity style={styles.actionRow} onPress={openGitConfig}>
+                  <Ionicons name="create-outline" size={20} color={colors.accent} />
+                  <Text style={styles.actionText}>{t('settings.gitConfigure')}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.actionRow} onPress={() => handleGitAction('push')}>
-                  <Ionicons name="cloud-upload-outline" size={20} color={colors.accent} />
-                  <Text style={styles.actionText}>{t('settings.push')}</Text>
+              ) : null}
+              {gitStatus?.config?.configured ? (
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity style={styles.actionRow} onPress={() => handleGitAction('test')}>
+                    <Ionicons name="git-network-outline" size={20} color={colors.accent} />
+                    <Text style={styles.actionText}>{t('settings.test')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.actionRow} onPress={() => handleGitAction('push')}>
+                    <Ionicons name="cloud-upload-outline" size={20} color={colors.accent} />
+                    <Text style={styles.actionText}>{t('settings.push')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.actionRow} onPress={() => handleGitAction('pull')}>
+                    <Ionicons name="cloud-download-outline" size={20} color={colors.accent} />
+                    <Text style={styles.actionText}>{t('settings.pull')}</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+              {gitStatus?.enabled !== false && gitStatus?.config?.configured ? (
+                <TouchableOpacity style={styles.actionRow} onPress={handleDeleteGitConfig}>
+                  <Ionicons name="trash-outline" size={20} color={colors.danger} />
+                  <Text style={styles.actionTextDanger}>{t('settings.gitDelete')}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.actionRow} onPress={() => handleGitAction('pull')}>
-                  <Ionicons name="cloud-download-outline" size={20} color={colors.accent} />
-                  <Text style={styles.actionText}>{t('settings.pull')}</Text>
-                </TouchableOpacity>
-              </View>
+              ) : null}
             </View>
 
             <Text style={styles.sectionTitle}>{t('settings.backups')}</Text>
@@ -749,6 +833,145 @@ export default function SettingsScreen({ navigation }: Props) {
         items={profileActionItems()}
         onClose={() => setProfileActions(null)}
       />
+
+      {/* Настройка Git Sync */}
+      <Modal
+        visible={gitModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGitModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.gitOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.gitCard}>
+            <ScrollView keyboardShouldPersistTaps="handled">
+              <Text style={styles.gitTitle}>{t('settings.gitSync')}</Text>
+
+              <Text style={styles.label}>{t('settings.gitProvider')}</Text>
+              <View style={styles.themeRow}>
+                {(['github', 'gitlab', 'forgejo'] as const).map((p) => {
+                  const active = gitProvider === p;
+                  return (
+                    <TouchableOpacity
+                      key={p}
+                      style={[styles.themeOption, active && styles.themeOptionActive]}
+                      onPress={() => setGitProvider(p)}
+                      accessibilityLabel={p}
+                    >
+                      <Text
+                        style={[styles.themeOptionText, active && styles.themeOptionTextActive]}
+                      >
+                        {p === 'github' ? 'GitHub' : p === 'gitlab' ? 'GitLab' : 'Forgejo'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.label}>{t('settings.repository')}</Text>
+              <TextInput
+                style={styles.input}
+                value={gitRepo}
+                onChangeText={setGitRepo}
+                placeholder="owner/repo"
+                placeholderTextColor={colors.textFaint}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              <Text style={styles.label}>{t('settings.gitBranch')}</Text>
+              <TextInput
+                style={styles.input}
+                value={gitBranch}
+                onChangeText={setGitBranch}
+                placeholder="main"
+                placeholderTextColor={colors.textFaint}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              <Text style={styles.label}>{t('settings.gitToken')}</Text>
+              <TextInput
+                style={styles.input}
+                value={gitToken}
+                onChangeText={setGitToken}
+                placeholder={
+                  gitStatus?.config?.hasToken ? t('settings.gitTokenKeep') : 'ghp_…'
+                }
+                placeholderTextColor={colors.textFaint}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              {gitProvider !== 'github' ? (
+                <>
+                  <Text style={styles.label}>{t('settings.gitApiBase')}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={gitApiBase}
+                    onChangeText={setGitApiBase}
+                    placeholder={
+                      gitProvider === 'gitlab'
+                        ? 'https://gitlab.com/api/v4'
+                        : 'https://forgejo.example.com/api/v1'
+                    }
+                    placeholderTextColor={colors.textFaint}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                  />
+                </>
+              ) : null}
+
+              <Text style={styles.label}>{t('settings.gitAuthorName')}</Text>
+              <TextInput
+                style={styles.input}
+                value={gitAuthorName}
+                onChangeText={setGitAuthorName}
+                placeholder="Poznote"
+                placeholderTextColor={colors.textFaint}
+                autoCapitalize="words"
+                autoCorrect={false}
+              />
+
+              <Text style={styles.label}>{t('settings.gitAuthorEmail')}</Text>
+              <TextInput
+                style={styles.input}
+                value={gitAuthorEmail}
+                onChangeText={setGitAuthorEmail}
+                placeholder="poznote@localhost"
+                placeholderTextColor={colors.textFaint}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+              />
+
+              <TouchableOpacity
+                style={[styles.button, !canSaveGit && styles.buttonDisabled]}
+                onPress={handleSaveGitConfig}
+                disabled={!canSaveGit}
+                accessibilityLabel={t('common.save')}
+              >
+                {isBusy ? (
+                  <ActivityIndicator color={colors.accentText} />
+                ) : (
+                  <Text style={styles.buttonText}>{t('common.save')}</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.formCancel}
+                onPress={() => setGitModalVisible(false)}
+              >
+                <Text style={styles.formCancelText}>{t('common.cancel')}</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -842,6 +1065,20 @@ const createStyles = (colors: ThemeColors) =>
     listRowMeta: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
     emptyText: { fontSize: 14, color: colors.textFaint, textAlign: 'center', paddingVertical: 12 },
     errorText: { fontSize: 14, color: colors.danger, textAlign: 'center', marginTop: 12 },
+    actionTextDanger: { fontSize: 15, color: colors.danger, fontWeight: '600' },
+    gitOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'center',
+      padding: 24,
+    },
+    gitCard: {
+      backgroundColor: colors.card,
+      borderRadius: 14,
+      padding: 20,
+      maxHeight: '90%',
+    },
+    gitTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginBottom: 4 },
     busy: { marginVertical: 10 },
     hint: { marginTop: 24 },
     hintText: { fontSize: 12, color: colors.textFaint, lineHeight: 17 },

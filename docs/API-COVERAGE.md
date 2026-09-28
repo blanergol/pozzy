@@ -114,7 +114,7 @@
 | Shared | GET /shared, GET /shared/with-me | ✅ клиент; /shared — UI на экране «Ещё»; with-me 🔶 без UI |
 | Settings | GET /settings, GET/PUT /settings/{key} | ✅ клиент (`getSettings`, `getSetting`, `updateSetting`), 🔶 без UI |
 | System | GET /system/version, updates, i18n | ✅ клиент; version/updates — UI «Ещё»; i18n 🔶 без UI |
-| Git sync | status, test, push, pull, progress, PUT /git-sync/config | ✅ клиент; status/test/push/pull — UI «Ещё»; progress/config 🔶 без UI |
+| Git sync | status, test, push, pull, progress, PUT /git-sync/config | ✅ клиент; status/test/push/pull/config — UI «Ещё»; progress 🔶 без UI |
 | Backups | GET/POST /backups, GET/DELETE /backups/{filename}, POST restore, POST upload | ✅ клиент; список/создание/удаление — UI «Ещё»; download/upload/restore 🔶 без UI |
 | Users | GET /users/profiles, GET/PATCH /users/me, POST /users/me/password, password-status, lookup | ✅ клиент; GET /users/me — UI подключения; остальное 🔶 без UI |
 | Admin | GET/POST /admin/users, GET/PATCH/DELETE /admin/users/{id}, reset-password, password-status, /admin/stats, /admin/repair | ✅ клиент, 🔶 без UI |

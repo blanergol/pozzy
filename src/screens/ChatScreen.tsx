@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import {
   ActivityIndicator,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -13,6 +14,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { BottomTabScreenProps, useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from 'expo-speech-recognition';
 import { ChatError } from '../api/chat';
 import { runAgent } from '../chat/agent';
 import { buildMemoryContext } from '../chat/memory';
@@ -23,7 +28,7 @@ import { useSettings } from '../context/SettingsContext';
 import { MainTabParamList } from '../navigation/types';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { useAndroidKeyboardPadding } from '../utils/keyboard';
-import { TranslationKey, useI18n } from '../i18n';
+import { dateLocale, TranslationKey, useI18n } from '../i18n';
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Chat'>;
 
@@ -50,7 +55,7 @@ function makeId(): string {
 export default function ChatScreen({ navigation }: Props) {
   const { aiSettings, client } = useSettings();
   const { colors } = useTheme();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const styles = useThemedStyles(createStyles, colors);
   const keyboardPadding = useAndroidKeyboardPadding();
   // Клавиатура перекрывает таб-бар — вычитаем его высоту, но возвращаем
@@ -71,6 +76,67 @@ export default function ChatScreen({ navigation }: Props) {
   approvalRef.current = pendingApproval;
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialog = useDialog();
+
+  // Голосовой ввод
+  const [listening, setListening] = useState(false);
+  const [voiceAvailable, setVoiceAvailable] = useState(false);
+  // Текст, набранный до старта диктовки — распознанное дописывается к нему
+  const voiceBaseTextRef = useRef('');
+  const voiceFinalRef = useRef('');
+  const listeningRef = useRef(false);
+  listeningRef.current = listening;
+
+  useEffect(() => {
+    try {
+      setVoiceAvailable(ExpoSpeechRecognitionModule.isRecognitionAvailable());
+    } catch {
+      setVoiceAvailable(false);
+    }
+    return () => {
+      if (listeningRef.current) ExpoSpeechRecognitionModule.abort();
+    };
+  }, []);
+
+  useSpeechRecognitionEvent('start', () => setListening(true));
+  useSpeechRecognitionEvent('end', () => setListening(false));
+  useSpeechRecognitionEvent('result', (event) => {
+    const transcript = event.results[0]?.transcript.trim() ?? '';
+    if (event.isFinal && transcript) {
+      voiceFinalRef.current = [voiceFinalRef.current, transcript].filter(Boolean).join(' ');
+    }
+    const interim = event.isFinal ? '' : transcript;
+    setInput([voiceBaseTextRef.current, voiceFinalRef.current, interim].filter(Boolean).join(' '));
+  });
+  useSpeechRecognitionEvent('error', (event) => {
+    setListening(false);
+    if (event.error === 'not-allowed') {
+      setError(t('chat.voicePermission'));
+    } else if (event.error !== 'aborted' && event.error !== 'no-speech' && event.error !== 'speech-timeout') {
+      setError(t('chat.voiceError'));
+    }
+  });
+
+  const handleVoicePress = useCallback(async () => {
+    if (listeningRef.current) {
+      ExpoSpeechRecognitionModule.stop();
+      return;
+    }
+    setError(null);
+    const perms = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    if (!perms.granted) {
+      setError(t('chat.voicePermission'));
+      return;
+    }
+    Keyboard.dismiss();
+    voiceBaseTextRef.current = input.trim();
+    voiceFinalRef.current = '';
+    ExpoSpeechRecognitionModule.start({
+      lang: dateLocale(locale),
+      interimResults: true,
+      continuous: true,
+      addsPunctuation: true,
+    });
+  }, [input, locale, t]);
 
   // Восстановление истории при запуске
   useEffect(() => {
@@ -156,6 +222,7 @@ export default function ChatScreen({ navigation }: Props) {
       setError(t('chat.noServer'));
       return;
     }
+    if (listeningRef.current) ExpoSpeechRecognitionModule.stop();
     setInput('');
     setError(null);
     const userMessage: UiMessage = { id: makeId(), role: 'user', content: text };
@@ -300,11 +367,26 @@ export default function ChatScreen({ navigation }: Props) {
           style={styles.input}
           value={input}
           onChangeText={setInput}
-          placeholder={t('chat.placeholder')}
+          placeholder={listening ? t('chat.voiceListening') : t('chat.placeholder')}
           placeholderTextColor={colors.textFaint}
           multiline
           onSubmitEditing={handleSend}
         />
+        {voiceAvailable ? (
+          <TouchableOpacity
+            style={[styles.micButton, listening && styles.micButtonActive]}
+            onPress={handleVoicePress}
+            disabled={sending}
+            accessibilityLabel={t(listening ? 'chat.voiceStop' : 'chat.voiceStart')}
+            accessibilityState={{ selected: listening }}
+          >
+            <Ionicons
+              name={listening ? 'stop' : 'mic-outline'}
+              size={20}
+              color={listening ? colors.accentText : colors.textSecondary}
+            />
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity
           style={[styles.sendButton, (!input.trim() || sending) && styles.sendButtonDisabled]}
           onPress={handleSend}
@@ -440,4 +522,18 @@ const createStyles = (colors: ThemeColors) =>
       justifyContent: 'center',
     },
     sendButtonDisabled: { opacity: 0.5 },
+    micButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.inputBg,
+      borderWidth: 1,
+      borderColor: colors.borderLight,
+    },
+    micButtonActive: {
+      backgroundColor: colors.danger,
+      borderColor: colors.danger,
+    },
   });
