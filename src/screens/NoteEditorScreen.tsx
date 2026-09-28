@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -14,7 +14,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import * as Speech from 'expo-speech';
+import * as Calendar from 'expo-calendar';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { describeError, LockConflictError } from '../api/client';
+import { ChatError, extractTextFromImage } from '../api/chat';
 import { Backlink, Folder, NoteDetails, SnapshotInfo } from '../api/types';
 import AttachmentsModal from '../components/AttachmentsModal';
 import ActionSheet, { ActionSheetItem } from '../components/ActionSheet';
@@ -34,6 +39,9 @@ import {
 } from '../data/notesRepository';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { bumpDataVersion } from '../utils/freshness';
+import { useVoiceDictation } from '../components/VoiceDictation';
+import { cancelNoteReminder, scheduleNoteReminder } from '../notifications/reminders';
+import { markdownToPlain } from '../utils/plainText';
 import { dateLocale, Locale, useI18n } from '../i18n';
 import { RootStackParamList } from '../navigation/types';
 
@@ -46,6 +54,17 @@ const EDITOR_SESSION_ID =
 const LOCK_HEARTBEAT_MS = 45_000;
 // Задержка автосохранения после последнего ввода
 const AUTOSAVE_DEBOUNCE_MS = 1_000;
+
+/** Задача tasklist-заметки (content = JSON-массив таких объектов). */
+interface TaskItem {
+  id: number;
+  text: string;
+  completed: boolean;
+  important?: boolean;
+  dueAt?: string | null;
+  dueReminder?: boolean;
+  [key: string]: unknown;
+}
 
 function formatDateTime(value: string | null | undefined, locale: Locale): string {
   if (!value) return '';
@@ -62,7 +81,7 @@ function formatDateTime(value: string | null | undefined, locale: Locale): strin
 
 export default function NoteEditorScreen({ navigation, route }: Props) {
   const { noteId } = route.params;
-  const { client, activeProfile } = useSettings();
+  const { client, activeProfile, aiSettings } = useSettings();
   const { isOnline, reportNetworkError, reportSuccess } = useConnectivity();
   const dialog = useDialog();
   const { colors } = useTheme();
@@ -98,6 +117,147 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
 
   const lockHeldRef = useRef(false);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Диктовка: вставка распознанного текста в позицию курсора поля content.
+  // Для tasklist выключена — там content это JSON-массив задач.
+  const selectionRef = useRef({ start: 0, end: 0 });
+  const dictationRef = useRef<{ before: string; after: string } | null>(null);
+  const voice = useVoiceDictation({
+    lang: dateLocale(locale),
+    onTranscript: (text) => {
+      const d = dictationRef.current;
+      if (!d) return;
+      const sep = d.before && !/[\s(]$/.test(d.before) ? ' ' : '';
+      setContent(d.before + sep + text + d.after);
+    },
+    onError: (kind) =>
+      setError(kind === 'permission' ? t('chat.voicePermission') : t('chat.voiceError')),
+  });
+  const voiceToggleRef = useRef(voice.toggle);
+  voiceToggleRef.current = voice.toggle;
+
+  const handleVoicePress = useCallback(() => {
+    if (!voice.listening) {
+      const s = Math.min(selectionRef.current.start, selectionRef.current.end);
+      const e = Math.max(selectionRef.current.start, selectionRef.current.end);
+      const c = valuesRef.current.content;
+      dictationRef.current = { before: c.slice(0, s), after: c.slice(e) };
+    }
+    setError(null);
+    voiceToggleRef.current();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice.listening]);
+
+  // Быстрое действие «Голосовая заметка»: диктовка стартует сама после загрузки
+  const startVoice = route.params.startVoice;
+  useEffect(() => {
+    if (startVoice && note && voice.available && !voice.listening) {
+      navigation.setParams({ startVoice: undefined });
+      handleVoicePress();
+    }
+  }, [startVoice, note, voice.available, voice.listening, handleVoicePress, navigation]);
+
+  // Озвучка заметки (TTS)
+  const [speaking, setSpeaking] = useState(false);
+  useEffect(
+    () => () => {
+      Speech.stop().catch(() => {});
+    },
+    [],
+  );
+
+  const handleSpeakNote = useCallback(() => {
+    if (speaking) {
+      Speech.stop().catch(() => {});
+      setSpeaking(false);
+      return;
+    }
+    let text: string;
+    if (note?.type === 'tasklist') {
+      // content — JSON-массив задач: озвучиваем только тексты
+      try {
+        const tasks = JSON.parse(content || '[]') as { text?: string }[];
+        text = tasks.map((x) => x.text ?? '').filter(Boolean).join('. ');
+      } catch {
+        text = '';
+      }
+    } else {
+      text = markdownToPlain(content);
+    }
+    const full = [heading, text].filter(Boolean).join('. ');
+    if (!full) return;
+    setSpeaking(true);
+    Speech.speak(full, {
+      language: dateLocale(locale),
+      onDone: () => setSpeaking(false),
+      onStopped: () => setSpeaking(false),
+      onError: () => setSpeaking(false),
+    });
+  }, [speaking, note?.type, content, heading, locale]);
+
+  // OCR: распознать текст с фото через vision-модель из настроек AI
+  const [ocrRunning, setOcrRunning] = useState(false);
+  const handleOcr = useCallback(async () => {
+    if (!aiSettings.apiKey.trim() || ocrRunning) return;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'image/*',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      setOcrRunning(true);
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
+      const text = await extractTextFromImage(aiSettings, base64, asset.mimeType ?? 'image/jpeg');
+      // Вставляем в позицию курсора, как при диктовке
+      const c = valuesRef.current.content;
+      const s = Math.min(selectionRef.current.start, selectionRef.current.end);
+      const e = Math.max(selectionRef.current.start, selectionRef.current.end);
+      const sep = c.slice(0, s) && !/[\s(]$/.test(c.slice(0, s)) ? ' ' : '';
+      setContent(c.slice(0, s) + sep + text + c.slice(e));
+      setError(null);
+    } catch (e) {
+      setError(
+        e instanceof ChatError ? t('editor.ocrFailed') : describeError(e),
+      );
+    } finally {
+      setOcrRunning(false);
+    }
+  }, [aiSettings, ocrRunning, t]);
+
+  // Напоминание заметки — событием в системный календарь
+  const handleAddToCalendar = useCallback(async () => {
+    if (!note?.reminder_at) return;
+    try {
+      const { status } = await Calendar.requestCalendarPermissionsAsync();
+      if (status !== 'granted') {
+        dialog.alert(t('editor.addToCalendar'), t('editor.calendarNoPermission'));
+        return;
+      }
+      let calendarId: string;
+      if (Platform.OS === 'ios') {
+        calendarId = (await Calendar.getDefaultCalendarAsync()).id;
+      } else {
+        const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+        const writable = calendars.find((c) => c.allowsModifications);
+        if (!writable) {
+          dialog.alert(t('editor.addToCalendar'), t('editor.calendarNone'));
+          return;
+        }
+        calendarId = writable.id;
+      }
+      const start = new Date(note.reminder_at.replace(' ', 'T'));
+      await Calendar.createEventAsync(calendarId, {
+        title: heading || t('common.untitled'),
+        startDate: start,
+        endDate: new Date(start.getTime() + 30 * 60 * 1000),
+      });
+      dialog.alert(t('editor.addToCalendar'), t('editor.calendarAdded'));
+    } catch (e) {
+      setError(describeError(e));
+    }
+  }, [note, heading, dialog, t]);
 
   // Контекст репозитория всегда актуален через ref — колбэки load/save
   // не пересоздаются при смене connectivity (иначе load() сбрасывал бы ввод).
@@ -407,7 +567,11 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     const setReminder = (date: Date) => {
       client
         .setNoteReminder(note.id, { reminder_at: date.toISOString() })
-        .then(load)
+        .then(() => {
+          // локальное уведомление — напомнит, даже если приложение закрыто
+          scheduleNoteReminder(note.id, note.heading, date.toISOString()).catch(() => {});
+          load();
+        })
         .catch((e) => setError(describeError(e)));
     };
     const inHour = new Date(Date.now() + 60 * 60 * 1000);
@@ -435,19 +599,29 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     ];
     if (note.reminder_at) {
       items.push({
+        label: t('editor.addToCalendar'),
+        icon: 'calendar-outline',
+        onPress: () => {
+          handleAddToCalendar().catch(() => {});
+        },
+      });
+      items.push({
         label: t('editor.reminderRemove'),
         icon: 'trash-outline',
         destructive: true,
         onPress: () => {
           client
             .deleteNoteReminder(note.id)
-            .then(load)
+            .then(() => {
+              cancelNoteReminder(note.id).catch(() => {});
+              load();
+            })
             .catch((e) => setError(describeError(e)));
         },
       });
     }
     return items;
-  }, [client, note, load, t, locale]);
+  }, [client, note, load, handleAddToCalendar, t, locale]);
 
   const openSnapshots = useCallback(async () => {
     if (!client || !note) return;
@@ -540,9 +714,58 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     setActionsVisible(true);
   }, []);
 
+  // ===== Чек-лист (tasklist): content — JSON-массив задач =====
+
+  const [newTaskText, setNewTaskText] = useState('');
+
+  const taskItems = useMemo<TaskItem[] | null>(() => {
+    if (note?.type !== 'tasklist') return null;
+    try {
+      const parsed = JSON.parse(content || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      // повреждённый/не-JSON контент — показываем обычный текстовый редактор
+      return null;
+    }
+  }, [note?.type, content]);
+
+  const saveTasks = useCallback((next: TaskItem[]) => {
+    setContent(JSON.stringify(next));
+  }, []);
+
+  const handleToggleTask = useCallback(
+    (id: number) => {
+      if (!taskItems || lockedByOther) return;
+      saveTasks(
+        taskItems.map((task) =>
+          task.id === id ? { ...task, completed: !task.completed } : task,
+        ),
+      );
+    },
+    [taskItems, lockedByOther, saveTasks],
+  );
+
+  const handleRemoveTask = useCallback(
+    (id: number) => {
+      if (!taskItems || lockedByOther) return;
+      saveTasks(taskItems.filter((task) => task.id !== id));
+    },
+    [taskItems, lockedByOther, saveTasks],
+  );
+
+  const handleAddTask = useCallback(() => {
+    const text = newTaskText.trim();
+    if (!taskItems || !text || lockedByOther) return;
+    saveTasks([
+      ...taskItems,
+      { id: Date.now(), text, completed: false, important: false, dueAt: null, dueReminder: false },
+    ]);
+    setNewTaskText('');
+  }, [taskItems, newTaskText, lockedByOther, saveTasks]);
+
   const actionItems = useCallback((): ActionSheetItem[] => {
     if (!note) return [];
-    return [
+    const items: ActionSheetItem[] = [
       { label: t('editor.moveToFolder'), icon: 'folder-outline', onPress: openFolderPicker },
       { label: t('editor.duplicate'), icon: 'copy-outline', onPress: handleDuplicate },
       {
@@ -556,17 +779,40 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
         icon: 'attach-outline',
         onPress: () => setAttachmentsVisible(true),
       },
+    ];
+    // OCR через vision-модель: только если настроен AI
+    if (aiSettings.enabled && aiSettings.apiKey.trim() && note.type !== 'tasklist') {
+      items.push({ label: t('editor.ocr'), icon: 'scan-outline', onPress: handleOcr });
+    }
+    items.push(
       { label: t('editor.reminder'), icon: 'alarm-outline', onPress: handleReminder },
       { label: t('editor.snapshots'), icon: 'hourglass-outline', onPress: openSnapshots },
       { label: t('editor.backlinks'), icon: 'return-down-back-outline', onPress: openBacklinks },
-    ];
-  }, [note, openFolderPicker, handleDuplicate, handleConvert, handleShare, handleReminder, openSnapshots, openBacklinks, t]);
+    );
+    return items;
+  }, [note, openFolderPicker, handleDuplicate, handleConvert, handleShare, handleOcr, handleReminder, openSnapshots, openBacklinks, aiSettings, t]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
       title: '',
       headerRight: () => (
         <View style={styles.headerButtons}>
+          <TouchableOpacity onPress={handleSpeakNote} hitSlop={8} style={styles.headerButton} accessibilityLabel={t('editor.speak')}>
+            <Ionicons
+              name={speaking ? 'stop-circle-outline' : 'volume-high-outline'}
+              size={22}
+              color={speaking ? colors.accent : colors.textFaint}
+            />
+          </TouchableOpacity>
+          {voice.available && note?.type !== 'tasklist' && !lockedByOther ? (
+            <TouchableOpacity onPress={handleVoicePress} hitSlop={8} style={styles.headerButton} accessibilityLabel={t('chat.voiceStart')}>
+              <Ionicons
+                name={voice.listening ? 'stop' : 'mic-outline'}
+                size={22}
+                color={voice.listening ? colors.danger : colors.accent}
+              />
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity onPress={handleToggleFavorite} hitSlop={8} style={styles.headerButton} accessibilityLabel="favorite-note">
             <Ionicons
               name={favorite ? 'star' : 'star-outline'}
@@ -590,11 +836,18 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     note,
     favorite,
     isTemp,
+    lockedByOther,
+    speaking,
+    voice.available,
+    voice.listening,
+    handleSpeakNote,
+    handleVoicePress,
     handleToggleFavorite,
     handleDelete,
     handleActions,
     styles,
     colors,
+    t,
   ]);
 
   if (isLoading) {
@@ -660,18 +913,89 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
           editable={!lockedByOther}
         />
 
-        <TextInput
-          style={styles.contentInput}
-          value={content}
-          onChangeText={setContent}
-          placeholder={t('editor.contentPlaceholder')}
-          placeholderTextColor={colors.textFaint}
-          multiline
-          textAlignVertical="top"
-          editable={!lockedByOther}
-        />
+        {taskItems ? (
+          <View style={styles.tasklist}>
+            {taskItems.length > 0 ? (
+              <Text style={styles.tasklistMeta}>
+                {t('editor.tasksProgress', {
+                  done: taskItems.filter((x) => x.completed).length,
+                  total: taskItems.length,
+                })}
+              </Text>
+            ) : null}
+            {taskItems.map((task) => (
+              <View key={String(task.id)} style={styles.taskRow}>
+                <TouchableOpacity
+                  onPress={() => handleToggleTask(task.id)}
+                  hitSlop={8}
+                  accessibilityLabel={task.text}
+                >
+                  <Ionicons
+                    name={task.completed ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={24}
+                    color={task.completed ? colors.accent : colors.textFaint}
+                  />
+                </TouchableOpacity>
+                <Text
+                  style={[styles.taskText, task.completed ? styles.taskTextDone : null]}
+                  numberOfLines={3}
+                >
+                  {task.text}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => handleRemoveTask(task.id)}
+                  hitSlop={8}
+                  accessibilityLabel={t('common.delete')}
+                >
+                  <Ionicons name="close" size={18} color={colors.textFaint} />
+                </TouchableOpacity>
+              </View>
+            ))}
+            <View style={styles.taskAddRow}>
+              <TextInput
+                style={styles.taskAddInput}
+                value={newTaskText}
+                onChangeText={setNewTaskText}
+                placeholder={t('editor.taskAddPlaceholder')}
+                placeholderTextColor={colors.textFaint}
+                editable={!lockedByOther}
+                onSubmitEditing={handleAddTask}
+                returnKeyType="done"
+              />
+              <TouchableOpacity
+                onPress={handleAddTask}
+                hitSlop={8}
+                disabled={!newTaskText.trim() || !!lockedByOther}
+                accessibilityLabel={t('editor.taskAdd')}
+              >
+                <Ionicons
+                  name="add-circle-outline"
+                  size={26}
+                  color={newTaskText.trim() && !lockedByOther ? colors.accent : colors.textFaint}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TextInput
+            style={styles.contentInput}
+            value={content}
+            onChangeText={setContent}
+            onSelectionChange={(e) => {
+              selectionRef.current = e.nativeEvent.selection;
+            }}
+            placeholder={t('editor.contentPlaceholder')}
+            placeholderTextColor={colors.textFaint}
+            multiline
+            textAlignVertical="top"
+            editable={!lockedByOther}
+          />
+        )}
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {ocrRunning ? (
+          <Text style={styles.savedText}>{t('editor.ocrRunning')}</Text>
+        ) : null}
         {isSaving ? (
           <Text style={styles.savedText}>{t('editor.saving')}</Text>
         ) : !isDirty && savedLocally ? (
@@ -880,6 +1204,30 @@ const createStyles = (colors: ThemeColors) =>
       color: colors.text,
       lineHeight: 23,
       minHeight: 320,
+      paddingVertical: 8,
+    },
+    tasklist: { minHeight: 320, paddingVertical: 8 },
+    tasklistMeta: { fontSize: 12, color: colors.textFaint, marginBottom: 8 },
+    taskRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 9,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.borderLight,
+    },
+    taskText: { flex: 1, fontSize: 16, color: colors.text },
+    taskTextDone: { textDecorationLine: 'line-through', color: colors.textFaint },
+    taskAddRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+    taskAddInput: {
+      flex: 1,
+      fontSize: 16,
+      color: colors.text,
+      backgroundColor: colors.inputBg,
+      borderWidth: 1,
+      borderColor: colors.borderLight,
+      borderRadius: 10,
+      paddingHorizontal: 12,
       paddingVertical: 8,
     },
     headerButtons: { flexDirection: 'row', alignItems: 'center', marginRight: 12 },

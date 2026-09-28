@@ -52,6 +52,7 @@ jest.mock('../../context/SettingsContext', () => {
       setWorkspace: jest.fn(),
       save: jest.fn(),
       reset: jest.fn(),
+      aiSettings: { enabled: false, baseUrl: '', apiKey: '', model: '' },
     }),
   };
 });

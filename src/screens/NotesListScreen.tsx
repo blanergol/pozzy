@@ -4,6 +4,7 @@ import {
   FlatList,
   Modal,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -28,6 +29,14 @@ import {
   repoToggleFavorite,
 } from '../data/notesRepository';
 import { NoteListItem, Workspace } from '../api/types';
+import {
+  applyPlaceholders,
+  deleteTemplate,
+  getBuiltinTemplates,
+  loadTemplates,
+  NoteTemplate,
+  saveTemplate,
+} from '../storage/templates';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { dateLocale, Locale, useI18n } from '../i18n';
 import { bumpDataVersion, freshMark, isFresh, STALE_MARK } from '../utils/freshness';
@@ -62,6 +71,16 @@ export default function NotesListScreen({ navigation, route }: Props) {
   const { t, locale } = useI18n();
   const folderId = route.params?.folderId;
   const folderName = route.params?.folderName;
+  const focusSearch = route.params?.focusSearch;
+  const searchInputRef = useRef<TextInput>(null);
+
+  // Deep action «Поиск» (quick actions): фокусируем поле поиска один раз
+  useEffect(() => {
+    if (focusSearch) {
+      searchInputRef.current?.focus();
+      navigation.setParams({ focusSearch: false });
+    }
+  }, [focusSearch, navigation]);
 
   // Репозиторий: онлайн — сервер, оффлайн — локальный кэш
   const repoCtx = useMemo<RepoContext | null>(
@@ -94,6 +113,13 @@ export default function NotesListScreen({ navigation, route }: Props) {
   >(null);
   const [wsNameValue, setWsNameValue] = useState('');
   const [wsSaving, setWsSaving] = useState(false);
+  // Шаблоны заметок: модалка выбора и форма создания пользовательского шаблона
+  const [tplModalVisible, setTplModalVisible] = useState(false);
+  const [userTemplates, setUserTemplates] = useState<NoteTemplate[]>([]);
+  const [tplForm, setTplForm] = useState<{ name: string; heading: string; content: string } | null>(
+    null,
+  );
+  const [tplSaving, setTplSaving] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   /** null = обычный режим; Set = режим выбора с отмеченными id */
   const [selection, setSelection] = useState<Set<number> | null>(null);
@@ -434,6 +460,64 @@ export default function NotesListScreen({ navigation, route }: Props) {
     }
   };
 
+  // ===== Шаблоны заметок (долгое нажатие на FAB) =====
+
+  const openTemplates = useCallback(async () => {
+    setTplModalVisible(true);
+    setUserTemplates(await loadTemplates());
+  }, []);
+
+  const handleCreateFromTemplate = async (tpl: NoteTemplate) => {
+    if (!repoCtx) return;
+    setTplModalVisible(false);
+    try {
+      const id = await repoCreateNote(repoCtx, {
+        heading: applyPlaceholders(tpl.heading, locale) || t('list.newNote'),
+        content: applyPlaceholders(tpl.content, locale),
+        type: tpl.type,
+        workspace: workspace ?? undefined,
+        folder_id: folderId,
+      });
+      navigation.navigate('NoteEditor', { noteId: id, favorite: 0 });
+    } catch (e) {
+      setError(describeError(e));
+    }
+  };
+
+  const handleDeleteTemplate = (tpl: NoteTemplate) => {
+    // закрываем модалку: диалог подтверждения иначе уйдёт под неё
+    setTplModalVisible(false);
+    dialog.alert(t('templates.deleteTitle', { name: tpl.name }), t('templates.deleteMessage'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.delete'),
+        style: 'destructive',
+        onPress: async () => {
+          await deleteTemplate(tpl.id);
+          setUserTemplates(await loadTemplates());
+        },
+      },
+    ]);
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!tplForm) return;
+    const name = tplForm.name.trim();
+    if (!name) return;
+    setTplSaving(true);
+    try {
+      await saveTemplate({
+        name,
+        heading: tplForm.heading.trim() || name,
+        content: tplForm.content,
+      });
+      setUserTemplates(await loadTemplates());
+      setTplForm(null);
+    } finally {
+      setTplSaving(false);
+    }
+  };
+
   const handleToggleFavorite = async (note: NoteListItem) => {
     if (!repoCtx) return;
     // Оптимистичное обновление
@@ -521,6 +605,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
       <View style={styles.searchBox}>
         <Ionicons name="search" size={18} color={colors.textFaint} style={styles.searchIcon} />
         <TextInput
+          ref={searchInputRef}
           style={styles.searchInput}
           value={search}
           onChangeText={setSearch}
@@ -574,7 +659,14 @@ export default function NotesListScreen({ navigation, route }: Props) {
       )}
 
       {selection === null ? (
-        <TouchableOpacity style={styles.fab} onPress={handleCreate} activeOpacity={0.8}>
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={handleCreate}
+          onLongPress={openTemplates}
+          delayLongPress={300}
+          activeOpacity={0.8}
+          accessibilityLabel={t('templates.title')}
+        >
           <Ionicons name="add" size={30} color={colors.accentText} />
         </TouchableOpacity>
       ) : null}
@@ -662,6 +754,120 @@ export default function NotesListScreen({ navigation, route }: Props) {
         items={wsActionItems()}
         onClose={() => setWsActions(null)}
       />
+
+      {/* Выбор шаблона заметки */}
+      <Modal
+        visible={tplModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTplModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.wsOverlay}
+          activeOpacity={1}
+          onPress={() => setTplModalVisible(false)}
+        >
+          <TouchableOpacity style={styles.wsCard} activeOpacity={1} onPress={() => {}}>
+            <Text style={styles.wsTitle}>{t('templates.title')}</Text>
+            <ScrollView style={styles.tplList}>
+              {[...getBuiltinTemplates(t), ...userTemplates].map((tpl) => (
+                <View key={tpl.id} style={styles.wsRow}>
+                  <TouchableOpacity
+                    style={styles.wsRowMain}
+                    onPress={() => handleCreateFromTemplate(tpl)}
+                  >
+                    <Text style={styles.wsRowText}>{tpl.name}</Text>
+                  </TouchableOpacity>
+                  {!tpl.builtin ? (
+                    <TouchableOpacity
+                      onPress={() => handleDeleteTemplate(tpl)}
+                      hitSlop={8}
+                      accessibilityLabel={t('common.delete')}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              ))}
+              {userTemplates.length === 0 ? (
+                <Text style={styles.tplHint}>{t('templates.empty')}</Text>
+              ) : null}
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.tplNewRow}
+              onPress={() => {
+                setTplModalVisible(false);
+                setTplForm({ name: '', heading: '', content: '' });
+              }}
+              accessibilityLabel={t('templates.new')}
+            >
+              <Ionicons name="add" size={20} color={colors.accent} />
+              <Text style={styles.tplNewText}>{t('templates.new')}</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Новый шаблон */}
+      <Modal
+        visible={tplForm !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTplForm(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{t('templates.new')}</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={tplForm?.name ?? ''}
+              onChangeText={(name) => setTplForm((f) => (f ? { ...f, name } : f))}
+              placeholder={t('templates.name')}
+              placeholderTextColor={colors.textFaint}
+              autoFocus
+            />
+            <TextInput
+              style={[styles.modalInput, styles.tplField]}
+              value={tplForm?.heading ?? ''}
+              onChangeText={(heading) => setTplForm((f) => (f ? { ...f, heading } : f))}
+              placeholder={t('templates.heading')}
+              placeholderTextColor={colors.textFaint}
+            />
+            <TextInput
+              style={[styles.modalInput, styles.tplField, styles.tplContentInput]}
+              value={tplForm?.content ?? ''}
+              onChangeText={(content) => setTplForm((f) => (f ? { ...f, content } : f))}
+              placeholder={t('templates.content')}
+              placeholderTextColor={colors.textFaint}
+              multiline
+            />
+            <Text style={styles.tplHint}>{t('templates.hintPlaceholders')}</Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity onPress={() => setTplForm(null)} style={styles.modalButton}>
+                <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSaveTemplate}
+                style={styles.modalButton}
+                disabled={tplSaving || !tplForm?.name.trim()}
+              >
+                {tplSaving ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <Text
+                    style={[
+                      styles.modalSaveText,
+                      !tplForm?.name.trim() && styles.modalSaveDisabled,
+                    ]}
+                  >
+                    {t('common.save')}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Создание/переименование пространства */}
       <Modal
@@ -846,4 +1052,21 @@ const createStyles = (colors: ThemeColors) =>
       shadowOffset: { width: 0, height: 3 },
       elevation: 4,
     },
+    tplList: { flexGrow: 0, maxHeight: 320 },
+    tplHint: {
+      fontSize: 12,
+      color: colors.textFaint,
+      textAlign: 'center',
+      paddingVertical: 10,
+    },
+    tplNewRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 12,
+      marginTop: 4,
+    },
+    tplNewText: { fontSize: 15, color: colors.accent, fontWeight: '600' },
+    tplField: { marginTop: 10 },
+    tplContentInput: { minHeight: 120, textAlignVertical: 'top' },
   });

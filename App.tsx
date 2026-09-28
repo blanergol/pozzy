@@ -7,14 +7,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
+import { ShareIntentProvider } from 'expo-share-intent';
 import { SettingsProvider, useSettings } from './src/context/SettingsContext';
 import { ConnectivityProvider } from './src/context/ConnectivityContext';
 import { useTheme } from './src/theme/ThemeContext';
 import { useI18n } from './src/i18n';
 import { DialogProvider } from './src/components/DialogProvider';
 import SyncManager from './src/components/SyncManager';
+import ShareIntentHandler from './src/components/ShareIntentHandler';
+import QuickActionsHandler from './src/components/QuickActionsHandler';
 import { AppLockProvider, AppLockScreen } from './src/security/AppLock';
 import { MainTabParamList, RootStackParamList } from './src/navigation/types';
+import { navigationRef } from './src/navigation/navigationRef';
+import { initNotifications } from './src/notifications/reminders';
 import SettingsScreen from './src/screens/SettingsScreen';
 import NotesListScreen from './src/screens/NotesListScreen';
 import NoteEditorScreen from './src/screens/NoteEditorScreen';
@@ -141,6 +146,11 @@ function ThemedNavigation() {
     SystemUI.setBackgroundColorAsync(colors.bg).catch(() => {});
   }, [colors.bg]);
 
+  // Локальные уведомления: handler показа, Android-канал, тап → заметка
+  useEffect(() => {
+    initNotifications();
+  }, []);
+
   const baseTheme = isDark ? DarkTheme : DefaultTheme;
   const navTheme = {
     ...baseTheme,
@@ -154,10 +164,12 @@ function ThemedNavigation() {
     },
   };
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer ref={navigationRef} theme={navTheme}>
       <DialogProvider>
         <AppLockProvider>
           <SyncManager />
+          <ShareIntentHandler />
+          <QuickActionsHandler />
           <RootNavigator />
           <AppLockScreen />
         </AppLockProvider>
@@ -197,7 +209,9 @@ export default function App() {
     <SafeAreaProvider>
       <SettingsProvider>
         <ConnectivityProvider>
-          <Root />
+          <ShareIntentProvider>
+            <Root />
+          </ShareIntentProvider>
         </ConnectivityProvider>
       </SettingsProvider>
     </SafeAreaProvider>

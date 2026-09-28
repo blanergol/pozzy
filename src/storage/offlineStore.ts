@@ -9,7 +9,7 @@ export interface CachedNote extends NoteDetails {
 /** Операция, ожидающая синхронизации с сервером. */
 export interface PendingOp {
   opId: string;
-  type: 'create' | 'update' | 'delete' | 'favorite';
+  type: 'create' | 'update' | 'delete' | 'favorite' | 'attachment';
   /** id заметки; у оффлайн-созданных — временный отрицательный. */
   noteId: number;
   payload: {
@@ -20,6 +20,10 @@ export interface PendingOp {
     folder_id?: number | null;
     /** Целевое состояние избранного (для type='favorite'). */
     favorite?: number;
+    /** Отложенная загрузка вложения (type='attachment'): локальная копия файла. */
+    localUri?: string;
+    fileName?: string;
+    mimeType?: string;
   };
   /** ISO-время локального изменения — основа last-write-wins. */
   clientTs: string;

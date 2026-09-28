@@ -128,3 +128,35 @@ export async function sendChatMessage(
   if (!reply.content?.trim()) throw new ChatError('empty');
   return reply.content;
 }
+
+/**
+ * OCR через vision-модель того же OpenAI-совместимого API, что и чат:
+ * картинка уходит base64 в image_url, модель возвращает распознанный текст.
+ */
+export async function extractTextFromImage(
+  settings: AISettings,
+  base64: string,
+  mimeType: string,
+): Promise<string> {
+  const data = await postChatCompletion(settings, {
+    model: settings.model,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: 'Extract all text from this image verbatim, preserving line breaks. Output only the recognized text, without any commentary or markdown fences.',
+          },
+          {
+            type: 'image_url',
+            image_url: { url: `data:${mimeType || 'image/jpeg'};base64,${base64}` },
+          },
+        ],
+      },
+    ],
+  });
+  const content = data.choices?.[0]?.message?.content;
+  if (!content?.trim()) throw new ChatError('empty');
+  return content.trim();
+}

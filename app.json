@@ -2,7 +2,8 @@
   "expo": {
     "name": "Pozzy",
     "slug": "pozzy",
-    "version": "1.0.5",
+    "version": "1.0.6",
+    "scheme": "pozzy",
     "orientation": "portrait",
     "icon": "./assets/icons/store/app-store-1024.png",
     "userInterfaceStyle": "automatic",
@@ -34,7 +35,26 @@
           "speechRecognitionPermission": "Разрешить Pozzy распознавать речь для голосового ввода."
         }
       ],
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Разрешить Pozzy добавлять напоминания в календарь."
+        }
+      ],
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": [
+            "text/*",
+            "image/*"
+          ],
+          "androidMultiIntentFilters": [
+            "image/*"
+          ]
+        }
+      ],
+      "expo-quick-actions"
     ]
   }
 }

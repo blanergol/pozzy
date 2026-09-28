@@ -151,6 +151,23 @@ export const ru = {
   'list.a11ySelectAll': 'Выбрать все',
   'list.a11yDeleteSelected': 'Удалить выбранные',
 
+  // Шаблоны заметок (долгое нажатие на FAB)
+  'templates.title': 'Создать из шаблона',
+  'templates.new': 'Новый шаблон',
+  'templates.name': 'Название шаблона',
+  'templates.heading': 'Заголовок заметки',
+  'templates.content': 'Содержимое',
+  'templates.empty': 'Пользовательских шаблонов пока нет',
+  'templates.deleteTitle': 'Удалить шаблон «{name}»?',
+  'templates.deleteMessage': 'Это действие нельзя отменить',
+  'templates.builtinDaily': 'Ежедневная заметка',
+  'templates.builtinMeeting': 'Встреча',
+  'templates.builtinShopping': 'Список покупок',
+  'templates.builtinDailyContent': '## Заметки дня\n\n\n## Задачи\n- [ ] \n\n## Итоги\n',
+  'templates.builtinMeetingContent': '## Участники\n- \n\n## Повестка\n1. \n\n## Решения\n\n\n## Задачи\n- [ ] \n',
+  'templates.builtinShoppingContent': '- [ ] \n',
+  'templates.hintPlaceholders': 'Подстановки: date, time, datetime в фигурных скобках',
+
   // Редактор
   'editor.headingPlaceholder': 'Заголовок',
   'editor.tagsPlaceholder': 'теги, через запятую',
@@ -175,6 +192,20 @@ export const ru = {
   'editor.shareLink': 'Публичная ссылка…',
   'editor.attachments': 'Вложения…',
   'editor.reminder': 'Напоминание…',
+  'editor.taskAddPlaceholder': 'Новая задача…',
+  'editor.taskAdd': 'Добавить задачу',
+  'editor.tasksProgress': 'Выполнено {done} из {total}',
+  'editor.speak': 'Озвучить заметку',
+  'editor.ocr': 'Распознать текст с фото',
+  'editor.ocrRunning': 'Распознаю текст…',
+  'editor.ocrFailed': 'Не удалось распознать текст. Проверьте настройки AI и что модель поддерживает изображения',
+  'editor.addToCalendar': 'Напоминание в календарь',
+  'editor.calendarAdded': 'Событие добавлено в календарь',
+  'editor.calendarNoPermission': 'Нет доступа к календарю',
+  'editor.calendarNone': 'На устройстве нет доступного календаря',
+  'quick.newNote': 'Новая заметка',
+  'quick.newVoiceNote': 'Голосовая заметка',
+  'quick.search': 'Поиск',
   'editor.snapshots': 'Версии…',
   'editor.backlinks': 'Ссылки на заметку…',
   'editor.rootFolder': 'Без папки (в корень)',
@@ -206,6 +237,9 @@ export const ru = {
   'attach.empty': 'Вложений нет. Загрузите кнопкой «+».',
   'attach.deleteTitle': 'Удалить вложение?',
   'attach.fileSaved': 'Файл сохранён',
+  'attach.pendingUpload': 'Ожидает загрузки',
+  'attach.deletePendingTitle': 'Удалить ожидающий файл?',
+  'attach.deletePendingMessage': 'Файл не будет загружен на сервер',
 
   // Папки
   'folders.titleWorkspace': 'Папки · {workspace}',
@@ -240,6 +274,9 @@ export const ru = {
   'notif.dismissAllTitle': 'Скрыть все уведомления?',
   'notif.empty': 'Уведомлений нет',
   'notif.reminderFallback': 'Напоминание',
+  'notif.reminderBody': 'Напоминание по заметке',
+  'notif.digestTitle': 'Планы на сегодня',
+  'notif.digestBody': 'Напоминаний сегодня: {today} · непрочитанных: {unread}',
 
   // AI-чат
   'chat.empty': 'Спросите что-нибудь',
@@ -303,6 +340,9 @@ export const ru = {
   'chat.voiceListening': 'Слушаю…',
   'chat.voicePermission': 'Нет доступа к микрофону',
   'chat.voiceError': 'Не удалось распознать речь',
+  'chat.speak': 'Озвучить ответ',
+  'chat.speakStop': 'Остановить озвучку',
+  'share.filesNote': 'Файлы',
 
   // Настройки AI
   'settings.aiSection': 'AI агент',

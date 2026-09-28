@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import {
   ActivityIndicator,
   FlatList,
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -14,20 +13,19 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { BottomTabScreenProps, useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-} from 'expo-speech-recognition';
+import * as Speech from 'expo-speech';
 import { ChatError } from '../api/chat';
 import { runAgent } from '../chat/agent';
 import { buildMemoryContext } from '../chat/memory';
 import MarkdownText from '../components/MarkdownText';
 import { useDialog } from '../components/DialogProvider';
+import { useVoiceDictation, VoiceDictationButton } from '../components/VoiceDictation';
 import { clearChatHistory, loadChatHistory, saveChatHistory } from '../storage/chatHistory';
 import { useSettings } from '../context/SettingsContext';
 import { MainTabParamList } from '../navigation/types';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { useAndroidKeyboardPadding } from '../utils/keyboard';
+import { markdownToPlain } from '../utils/plainText';
 import { dateLocale, TranslationKey, useI18n } from '../i18n';
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Chat'>;
@@ -77,66 +75,57 @@ export default function ChatScreen({ navigation }: Props) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialog = useDialog();
 
-  // Голосовой ввод
-  const [listening, setListening] = useState(false);
-  const [voiceAvailable, setVoiceAvailable] = useState(false);
-  // Текст, набранный до старта диктовки — распознанное дописывается к нему
+  // Голосовой ввод: распознанное дописывается к тексту, набранному до диктовки
   const voiceBaseTextRef = useRef('');
-  const voiceFinalRef = useRef('');
+  const voice = useVoiceDictation({
+    lang: dateLocale(locale),
+    onTranscript: (text) =>
+      setInput([voiceBaseTextRef.current, text].filter(Boolean).join(' ')),
+    onError: (kind) =>
+      setError(kind === 'permission' ? t('chat.voicePermission') : t('chat.voiceError')),
+  });
+  const listening = voice.listening;
   const listeningRef = useRef(false);
   listeningRef.current = listening;
+  const voiceToggleRef = useRef(voice.toggle);
+  voiceToggleRef.current = voice.toggle;
 
-  useEffect(() => {
-    try {
-      setVoiceAvailable(ExpoSpeechRecognitionModule.isRecognitionAvailable());
-    } catch {
-      setVoiceAvailable(false);
-    }
-    return () => {
-      if (listeningRef.current) ExpoSpeechRecognitionModule.abort();
-    };
-  }, []);
-
-  useSpeechRecognitionEvent('start', () => setListening(true));
-  useSpeechRecognitionEvent('end', () => setListening(false));
-  useSpeechRecognitionEvent('result', (event) => {
-    const transcript = event.results[0]?.transcript.trim() ?? '';
-    if (event.isFinal && transcript) {
-      voiceFinalRef.current = [voiceFinalRef.current, transcript].filter(Boolean).join(' ');
-    }
-    const interim = event.isFinal ? '' : transcript;
-    setInput([voiceBaseTextRef.current, voiceFinalRef.current, interim].filter(Boolean).join(' '));
-  });
-  useSpeechRecognitionEvent('error', (event) => {
-    setListening(false);
-    if (event.error === 'not-allowed') {
-      setError(t('chat.voicePermission'));
-    } else if (event.error !== 'aborted' && event.error !== 'no-speech' && event.error !== 'speech-timeout') {
-      setError(t('chat.voiceError'));
-    }
-  });
-
-  const handleVoicePress = useCallback(async () => {
-    if (listeningRef.current) {
-      ExpoSpeechRecognitionModule.stop();
-      return;
-    }
+  const handleVoicePress = useCallback(() => {
     setError(null);
-    const perms = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-    if (!perms.granted) {
-      setError(t('chat.voicePermission'));
-      return;
-    }
-    Keyboard.dismiss();
-    voiceBaseTextRef.current = input.trim();
-    voiceFinalRef.current = '';
-    ExpoSpeechRecognitionModule.start({
-      lang: dateLocale(locale),
-      interimResults: true,
-      continuous: true,
-      addsPunctuation: true,
-    });
-  }, [input, locale, t]);
+    if (!listeningRef.current) voiceBaseTextRef.current = input.trim();
+    voiceToggleRef.current();
+  }, [input]);
+
+  // Озвучка ответов ассистента (TTS)
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  useEffect(
+    () => () => {
+      Speech.stop().catch(() => {});
+    },
+    [],
+  );
+
+  const handleSpeak = useCallback(
+    (message: UiMessage) => {
+      if (speakingId === message.id) {
+        Speech.stop();
+        setSpeakingId(null);
+        return;
+      }
+      Speech.stop();
+      // Убираем markdown-разметку: озвучиваем чистый текст
+      const plain = markdownToPlain(message.content);
+      if (!plain) return;
+      setSpeakingId(message.id);
+      Speech.speak(plain, {
+        language: dateLocale(locale),
+        onDone: () => setSpeakingId(null),
+        onStopped: () => setSpeakingId(null),
+        onError: () => setSpeakingId(null),
+      });
+    },
+    [speakingId, locale],
+  );
 
   // Восстановление истории при запуске
   useEffect(() => {
@@ -222,7 +211,7 @@ export default function ChatScreen({ navigation }: Props) {
       setError(t('chat.noServer'));
       return;
     }
-    if (listeningRef.current) ExpoSpeechRecognitionModule.stop();
+    if (listeningRef.current) voiceToggleRef.current();
     setInput('');
     setError(null);
     const userMessage: UiMessage = { id: makeId(), role: 'user', content: text };
@@ -310,22 +299,35 @@ export default function ChatScreen({ navigation }: Props) {
                       colors={colors}
                       style={styles.bubbleAssistantText}
                     />
-                    {item.content.length > COLLAPSE_THRESHOLD ? (
+                    <View style={styles.bubbleActions}>
                       <TouchableOpacity
-                        onPress={() =>
-                          setExpandedIds((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(item.id)) next.delete(item.id);
-                            else next.add(item.id);
-                            return next;
-                          })
-                        }
+                        onPress={() => handleSpeak(item)}
+                        hitSlop={8}
+                        accessibilityLabel={t(speakingId === item.id ? 'chat.speakStop' : 'chat.speak')}
                       >
-                        <Text style={styles.expandToggle}>
-                          {expandedIds.has(item.id) ? t('chat.showLess') : t('chat.showMore')}
-                        </Text>
+                        <Ionicons
+                          name={speakingId === item.id ? 'stop-circle-outline' : 'volume-high-outline'}
+                          size={17}
+                          color={speakingId === item.id ? colors.accent : colors.textFaint}
+                        />
                       </TouchableOpacity>
-                    ) : null}
+                      {item.content.length > COLLAPSE_THRESHOLD ? (
+                        <TouchableOpacity
+                          onPress={() =>
+                            setExpandedIds((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(item.id)) next.delete(item.id);
+                              else next.add(item.id);
+                              return next;
+                            })
+                          }
+                        >
+                          <Text style={styles.expandToggle}>
+                            {expandedIds.has(item.id) ? t('chat.showLess') : t('chat.showMore')}
+                          </Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
                   </>
                 ) : (
                   <Text style={styles.bubbleUserText}>{item.content}</Text>
@@ -372,20 +374,13 @@ export default function ChatScreen({ navigation }: Props) {
           multiline
           onSubmitEditing={handleSend}
         />
-        {voiceAvailable ? (
-          <TouchableOpacity
-            style={[styles.micButton, listening && styles.micButtonActive]}
-            onPress={handleVoicePress}
+        {voice.available ? (
+          <VoiceDictationButton
+            listening={listening}
             disabled={sending}
+            onPress={handleVoicePress}
             accessibilityLabel={t(listening ? 'chat.voiceStop' : 'chat.voiceStart')}
-            accessibilityState={{ selected: listening }}
-          >
-            <Ionicons
-              name={listening ? 'stop' : 'mic-outline'}
-              size={20}
-              color={listening ? colors.accentText : colors.textSecondary}
-            />
-          </TouchableOpacity>
+          />
         ) : null}
         <TouchableOpacity
           style={[styles.sendButton, (!input.trim() || sending) && styles.sendButtonDisabled]}
@@ -449,7 +444,13 @@ const createStyles = (colors: ThemeColors) =>
     },
     bubbleUserText: { color: colors.accentText, fontSize: 15 },
     bubbleAssistantText: { color: colors.text, fontSize: 15 },
-    expandToggle: { color: colors.accent, fontSize: 13, marginTop: 6, fontWeight: '600' },
+    expandToggle: { color: colors.accent, fontSize: 13, fontWeight: '600' },
+    bubbleActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 14,
+      marginTop: 6,
+    },
     toolChip: {
       alignSelf: 'flex-start',
       flexDirection: 'row',
@@ -522,18 +523,4 @@ const createStyles = (colors: ThemeColors) =>
       justifyContent: 'center',
     },
     sendButtonDisabled: { opacity: 0.5 },
-    micButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.inputBg,
-      borderWidth: 1,
-      borderColor: colors.borderLight,
-    },
-    micButtonActive: {
-      backgroundColor: colors.danger,
-      borderColor: colors.danger,
-    },
   });

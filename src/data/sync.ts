@@ -1,5 +1,6 @@
 import { PoznoteClient } from '../api/client';
 import { NoteListItem } from '../api/types';
+import { processAttachmentOps } from './attachmentQueue';
 import { PendingOp, loadOfflineData, resolveNoteId, saveOfflineData } from '../storage/offlineStore';
 import { bumpDataVersion } from '../utils/freshness';
 
@@ -47,9 +48,15 @@ export async function syncNow(
       throw e;
     }
 
-    // Обрабатываем очередь по порядку; после каждой операции сохраняемся
+    // Обрабатываем очередь по порядку; после каждой операции сохраняемся.
+    // Вложения откладываем: им нужны серверные id заметок (create-операции).
+    const deferredAttachments: PendingOp[] = [];
     while (data.pending.length > 0) {
       const op = data.pending[0] as PendingOp;
+      if (op.type === 'attachment') {
+        deferredAttachments.push(data.pending.shift() as PendingOp);
+        continue;
+      }
       const id = resolveNoteId(data, op.noteId);
       try {
         if (op.type === 'create') {
@@ -105,6 +112,7 @@ export async function syncNow(
         if (isNetworkError(e)) {
           callbacks.reportNetworkError?.();
           // связь снова пропала — останавливаемся, очередь сохранена
+          data.pending.push(...deferredAttachments);
           await saveOfflineData(profileId, data);
           return pushed;
         }
@@ -113,6 +121,18 @@ export async function syncNow(
       }
       data.pending.shift();
       await saveOfflineData(profileId, data);
+    }
+
+    // Отложенные вложения — после note-операций: временные id уже разрешены
+    data.pending.push(...deferredAttachments);
+    if (deferredAttachments.length > 0) {
+      const att = await processAttachmentOps(client, profileId, data);
+      pushed += att.pushed;
+      if (att.networkError) {
+        callbacks.reportNetworkError?.();
+        return pushed;
+      }
+      if (att.pushed > 0) callbacks.reportSuccess?.();
     }
 
     // Очередь пуста — подтягиваем свежие снимки с сервера

@@ -15,6 +15,14 @@ import * as Sharing from 'expo-sharing';
 import { describeError, PoznoteClient } from '../api/client';
 import { Attachment } from '../api/types';
 import { base64FromBytes } from '../utils/base64';
+import {
+  listPendingAttachments,
+  queueAttachmentUpload,
+  removePendingAttachment,
+} from '../data/attachmentQueue';
+import { useSettings } from '../context/SettingsContext';
+import { useConnectivity } from '../context/ConnectivityContext';
+import { PendingOp } from '../storage/offlineStore';
 import { useDialog } from './DialogProvider';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { useI18n } from '../i18n';
@@ -44,9 +52,18 @@ export default function AttachmentsModal({ visible, noteId, workspace, client, o
   const styles = useThemedStyles(createStyles, colors);
   const dialog = useDialog();
   const { t } = useI18n();
+  const { activeProfile } = useSettings();
+  const { isOnline } = useConnectivity();
+  const profileId = activeProfile?.id ?? null;
   const [attachments, setAttachments] = useState<Attachment[] | null>(null);
+  const [pending, setPending] = useState<PendingOp[]>([]);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const loadPending = useCallback(async () => {
+    if (!profileId) return;
+    setPending(await listPendingAttachments(profileId, noteId));
+  }, [profileId, noteId]);
 
   const load = useCallback(async () => {
     try {
@@ -64,8 +81,9 @@ export default function AttachmentsModal({ visible, noteId, workspace, client, o
       setAttachments(null);
       setError(null);
       load();
+      loadPending();
     }
-  }, [visible, load]);
+  }, [visible, load, loadPending]);
 
   const handleUpload = async () => {
     try {
@@ -75,18 +93,46 @@ export default function AttachmentsModal({ visible, noteId, workspace, client, o
       });
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
+      const file = { uri: asset.uri, name: asset.name, mimeType: asset.mimeType };
       setIsBusy(true);
-      await client.uploadAttachment(
-        noteId,
-        { uri: asset.uri, name: asset.name, mimeType: asset.mimeType },
-        workspace ?? undefined,
-      );
+      // Оффлайн — файл копируется локально и уйдёт при синхронизации
+      if (!isOnline && profileId) {
+        await queueAttachmentUpload(profileId, noteId, file, workspace ?? undefined);
+        await loadPending();
+        return;
+      }
+      try {
+        await client.uploadAttachment(noteId, file, workspace ?? undefined);
+      } catch (e) {
+        // сеть пропала в момент загрузки — в очередь
+        if (e instanceof Error && e.message === 'network' && profileId) {
+          await queueAttachmentUpload(profileId, noteId, file, workspace ?? undefined);
+          await loadPending();
+          return;
+        }
+        throw e;
+      }
       await load();
     } catch (e) {
       setError(describeError(e));
     } finally {
       setIsBusy(false);
     }
+  };
+
+  const handleDeletePending = (op: PendingOp) => {
+    dialog.alert(t('attach.deletePendingTitle'), t('attach.deletePendingMessage'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.delete'),
+        style: 'destructive',
+        onPress: async () => {
+          if (!profileId) return;
+          await removePendingAttachment(profileId, op.opId);
+          await loadPending();
+        },
+      },
+    ]);
   };
 
   const handleOpen = async (attachment: Attachment) => {
@@ -151,10 +197,24 @@ export default function AttachmentsModal({ visible, noteId, workspace, client, o
 
           {attachments === null ? (
             <ActivityIndicator color={colors.accent} style={styles.spinner} />
-          ) : attachments.length === 0 ? (
+          ) : attachments.length === 0 && pending.length === 0 ? (
             <Text style={styles.emptyText}>{t('attach.empty')}</Text>
           ) : (
             <ScrollView style={styles.list}>
+              {pending.map((op) => (
+                <View key={op.opId} style={styles.row}>
+                  <View style={styles.rowBody}>
+                    <Text style={styles.rowTitle} numberOfLines={1}>
+                      {op.payload.fileName}
+                    </Text>
+                    <Text style={styles.pendingMeta}>{t('attach.pendingUpload')}</Text>
+                  </View>
+                  <Ionicons name="time-outline" size={18} color={colors.textFaint} />
+                  <TouchableOpacity onPress={() => handleDeletePending(op)} hitSlop={8}>
+                    <Ionicons name="trash-outline" size={20} color={colors.danger} />
+                  </TouchableOpacity>
+                </View>
+              ))}
               {attachments.map((a) => (
                 <View key={a.id} style={styles.row}>
                   <TouchableOpacity style={styles.rowBody} onPress={() => handleOpen(a)}>
@@ -208,6 +268,7 @@ const createStyles = (colors: ThemeColors) =>
   rowBody: { flex: 1, marginRight: 10 },
   rowTitle: { fontSize: 15, fontWeight: '600', color: colors.text },
   rowMeta: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
+  pendingMeta: { fontSize: 12, color: colors.textFaint, marginTop: 2, fontStyle: 'italic' },
   close: { marginTop: 16, alignItems: 'center', paddingVertical: 10 },
   closeText: { fontSize: 16, color: colors.accent, fontWeight: '600' },
 });
