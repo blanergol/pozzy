@@ -24,6 +24,7 @@ Pozzy talks to your own Poznote server over its REST API (HTTP Basic Auth + `X-U
 - First-launch server setup with connection validation (credentials and `/notes` access are checked before saving)
 - Multiple saved servers: add, edit, switch, and remove connection profiles
 - `X-User-ID` auto-detected from your credentials (`GET /users/me`); manual override for admins
+- **App passwords support** (Poznote 6.84+): sign in with your account username and an app password created in `Settings → App passwords` instead of the account password. App passwords are sent over HTTP Basic Auth exactly like the account password, so they work out of the box — including on SSO-only instances where Basic Auth for the API is otherwise disabled
 - Light / dark / system theme, persisted
 - **Two UI languages: English and Russian** — auto-detected from the system locale, with a manual override in Settings
 - **App lock with biometrics or device PIN** (Face ID / fingerprint / system passcode), relocks after 30 s in background (native only)
@@ -135,7 +136,7 @@ Then pick your target:
 ### First-launch setup
 
 1. **Server URL** — e.g. `https://poznote.example.com` (the `https://` scheme is added automatically if omitted).
-2. **Login and password** — your Poznote credentials (HTTP Basic Auth).
+2. **Login and password** — your Poznote credentials (HTTP Basic Auth). On Poznote 6.84+ you can use an [app password](https://github.com/timothepoznanski/poznote/blob/main/docs/API-REST.md#authentication) instead of the account password — recommended for mobile clients, and the only option on SSO-only instances.
 3. **Profile ID** — leave empty: it is auto-detected from your credentials. Fill it in manually only to act as another profile (requires admin credentials).
 
 Tap **“Check & save”**: the app validates the credentials and `/api/v1/notes` access, then stores the profile. You can save multiple servers and switch between them in **Settings → Servers**.
@@ -211,14 +212,6 @@ While building the client we found several places where Poznote's OpenAPI spec d
 ## Contributing
 
 Issues and pull requests are welcome. Please run `npx tsc --noEmit` and the E2E suite before submitting a PR.
-
-## Support the project
-
-Pozzy is free and open source. If it saves you time, you can support development with a USDT transfer on the TON network (no memo required):
-
-```
-UQBC2cFoZ94jsJil-AhmL2HalKZoRikv50UVtzAdSRj05qCk
-```
 
 ## Acknowledgments
 
