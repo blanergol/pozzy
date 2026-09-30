@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import { SHARED_ATTACHMENT_PREFIX } from '../storage/secure/encryptedFiles';
 import * as Sharing from 'expo-sharing';
 import { describeError, PoznoteClient } from '../api/client';
 import { Attachment } from '../api/types';
@@ -144,8 +145,11 @@ export default function AttachmentsModal({ visible, noteId, workspace, client, o
         workspace ?? undefined,
       );
       const base64 = base64FromBytes(new Uint8Array(data));
+      // Открытая копия нужна системному share sheet. Шифровать её нельзя —
+      // приложение-получатель читает файл как есть; удаляется при следующем старте.
       const fileUri =
-        FileSystem.cacheDirectory + `poznote_${noteId}_${safeFileName(attachment.original_filename)}`;
+        FileSystem.cacheDirectory +
+        `${SHARED_ATTACHMENT_PREFIX}${noteId}_${safeFileName(attachment.original_filename)}`;
       await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: 'base64' });
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {

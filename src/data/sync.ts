@@ -1,7 +1,7 @@
 import { PoznoteClient } from '../api/client';
 import { NoteListItem } from '../api/types';
 import { processAttachmentOps } from './attachmentQueue';
-import { PendingOp, loadOfflineData, resolveNoteId, saveOfflineData } from '../storage/offlineStore';
+import { loadOfflineData, resolveNoteId, saveOfflineData } from '../storage/offlineStore';
 import { bumpDataVersion } from '../utils/freshness';
 
 function isNetworkError(e: unknown): boolean {
@@ -50,13 +50,13 @@ export async function syncNow(
 
     // Обрабатываем очередь по порядку; после каждой операции сохраняемся.
     // Вложения откладываем: им нужны серверные id заметок (create-операции).
-    const deferredAttachments: PendingOp[] = [];
-    while (data.pending.length > 0) {
-      const op = data.pending[0] as PendingOp;
-      if (op.type === 'attachment') {
-        deferredAttachments.push(data.pending.shift() as PendingOp);
-        continue;
-      }
+    // Они остаются в очереди (а значит и на диске) — раньше их вынимали из
+    // очереди на время цикла, и падение приложения посреди синка их теряло.
+    const done = new Set<string>();
+    for (;;) {
+      const op = data.pending.find((o) => o.type !== 'attachment' && !done.has(o.opId));
+      if (!op) break;
+      done.add(op.opId);
       const id = resolveNoteId(data, op.noteId);
       try {
         if (op.type === 'create') {
@@ -112,20 +112,18 @@ export async function syncNow(
         if (isNetworkError(e)) {
           callbacks.reportNetworkError?.();
           // связь снова пропала — останавливаемся, очередь сохранена
-          data.pending.push(...deferredAttachments);
           await saveOfflineData(profileId, data);
           return pushed;
         }
         // Прочие ошибки (409/423 лок, 500 и т.п.): пропускаем операцию,
         // чтобы не блокировать очередь навсегда
       }
-      data.pending.shift();
+      data.pending = data.pending.filter((o) => o.opId !== op.opId);
       await saveOfflineData(profileId, data);
     }
 
     // Отложенные вложения — после note-операций: временные id уже разрешены
-    data.pending.push(...deferredAttachments);
-    if (deferredAttachments.length > 0) {
+    if (data.pending.some((o) => o.type === 'attachment')) {
       const att = await processAttachmentOps(client, profileId, data);
       pushed += att.pushed;
       if (att.networkError) {

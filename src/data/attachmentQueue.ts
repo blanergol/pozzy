@@ -1,4 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
 import { PoznoteClient } from '../api/client';
 import { UploadFile } from '../api/types';
 import {
@@ -8,12 +9,14 @@ import {
   makeOpId,
   resolveNoteId,
   saveOfflineData,
+  saveOfflineDataStrict,
 } from '../storage/offlineStore';
-
-// documentDirectory читаем лениво: в jest нативный модуль недоступен
-function pendingDir(): string {
-  return `${FileSystem.documentDirectory}pending-attachments/`;
-}
+import {
+  PreparedUpload,
+  encryptAttachmentFile,
+  isEncryptedAttachmentUri,
+  prepareAttachmentUpload,
+} from '../storage/secure/encryptedFiles';
 
 function isNetworkError(e: unknown): boolean {
   return e instanceof Error && e.message === 'network';
@@ -25,7 +28,7 @@ async function deleteLocalFile(uri: string | undefined): Promise<void> {
 }
 
 /**
- * Поставить вложение в оффлайн-очередь: файл копируется во внутренний каталог
+ * Поставить вложение в оффлайн-очередь: файл шифруется во внутренний каталог
  * (кэш DocumentPicker система может очистить), в очередь добавляется op 'attachment'.
  * noteId может быть временным отрицательным — разрешится при sync.
  */
@@ -37,10 +40,7 @@ export async function queueAttachmentUpload(
 ): Promise<PendingOp> {
   const opId = makeOpId();
   const safeName = file.name.replace(/[\\/:*?"<>|]/g, '_').trim() || 'attachment';
-  const dir = pendingDir();
-  await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
-  const localUri = `${dir}${opId}-${safeName}`;
-  await FileSystem.copyAsync({ from: file.uri, to: localUri });
+  const localUri = await encryptAttachmentFile(profileId, opId, file.uri);
 
   const op: PendingOp = {
     opId,
@@ -91,15 +91,28 @@ export async function processAttachmentOps(
   let pushed = 0;
   for (const op of ops) {
     const localUri = op.payload.localUri;
-    if (!localUri) {
-      // битая запись без файла — просто вычищаем
+    const fileName = op.payload.fileName ?? 'attachment';
+    let prepared: PreparedUpload | null = null;
+    if (localUri) {
+      try {
+        prepared = await prepareAttachmentUpload(profileId, op.opId, localUri, fileName);
+      } catch {
+        // Временный локальный сбой (чтение, место на диске): файл и операцию
+        // сохраняем и прекращаем обработку до следующего синка
+        await saveOfflineData(profileId, data);
+        return { pushed, networkError: false };
+      }
+    }
+    if (!prepared) {
+      // битая запись без файла или безвозвратно нечитаемый файл — вычищаем
+      await deleteLocalFile(localUri);
       data.pending = data.pending.filter((o) => o.opId !== op.opId);
       continue;
     }
     try {
       await client.uploadAttachment(
         resolveNoteId(data, op.noteId),
-        { uri: localUri, name: op.payload.fileName ?? 'attachment', mimeType: op.payload.mimeType },
+        { uri: prepared.uri, name: fileName, mimeType: op.payload.mimeType },
         op.payload.workspace,
       );
       pushed++;
@@ -110,10 +123,42 @@ export async function processAttachmentOps(
         return { pushed, networkError: true };
       }
       // 4xx и прочие: убираем операцию и файл, чтобы не блокировать очередь
+    } finally {
+      await prepared.cleanup();
     }
     await deleteLocalFile(localUri);
     data.pending = data.pending.filter((o) => o.opId !== op.opId);
   }
   await saveOfflineData(profileId, data);
   return { pushed, networkError: false };
+}
+
+/**
+ * Миграция: legacy-файлы вложений открытым текстом (до 1.1) шифруются в
+ * каталог сервера. Порядок: зашифровать с проверкой → записать новый путь в
+ * очередь → только потом удалить исходник. Прерывание на любом шаге
+ * безопасно: исходник остаётся, пока очередь на него ссылается.
+ * Возвращает uri legacy-файлов, на которые очередь всё ещё ссылается.
+ */
+export async function migrateLegacyAttachmentFiles(profileId: string): Promise<string[]> {
+  if (Platform.OS === 'web') return [];
+  const data = await loadOfflineData(profileId);
+  const stillReferenced: string[] = [];
+  for (const op of data.pending) {
+    const legacyUri = op.payload.localUri;
+    if (op.type !== 'attachment' || !legacyUri || isEncryptedAttachmentUri(legacyUri)) continue;
+    const exists = await FileSystem.getInfoAsync(legacyUri)
+      .then((info) => info.exists)
+      .catch(() => false);
+    if (!exists) continue; // файла нет — выгрузка и раньше отбросила бы операцию
+    try {
+      op.payload.localUri = await encryptAttachmentFile(profileId, op.opId, legacyUri);
+      await saveOfflineDataStrict(profileId, data);
+      await deleteLocalFile(legacyUri);
+    } catch {
+      op.payload.localUri = legacyUri;
+      stillReferenced.push(legacyUri);
+    }
+  }
+  return stillReferenced;
 }

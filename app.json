@@ -2,7 +2,7 @@
   "expo": {
     "name": "Pozzy",
     "slug": "pozzy",
-    "version": "1.0.7",
+    "version": "1.1.0",
     "scheme": "pozzy",
     "orientation": "portrait",
     "icon": "./assets/icons/store/app-store-1024.png",
@@ -54,7 +54,13 @@
           ]
         }
       ],
-      "expo-quick-actions"
+      "expo-quick-actions",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ]
     ]
   }
 }

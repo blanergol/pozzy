@@ -26,6 +26,9 @@ export const en: Record<TranslationKey, string> = {
   'error.noNoteId': 'The server did not return the new note id',
 
   'offline.banner': 'Offline mode: changes are saved locally and will sync when reconnected',
+  'offline.lostEditsTitle': 'Offline changes could not be restored',
+  'offline.lostEditsMessage':
+    'Unsynced local changes for server {servers} could not be read (for example after restoring from a backup or moving to a new device). Notes will be downloaded from the server again, but edits made offline that were not yet sent are lost.',
 
   'onboarding.slide1.title': 'Your notes. Your server.',
   'onboarding.slide1.text': 'Pozzy is a mobile client for self-hosted Poznote. Your notes live on your own server, not in someone else’s cloud — full privacy and control over your data.',

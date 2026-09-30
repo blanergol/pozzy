@@ -28,7 +28,7 @@ Pozzy talks to your own Poznote server over its REST API (HTTP Basic Auth + `X-U
 - Light / dark / system theme, persisted
 - **Two UI languages: English and Russian** — auto-detected from the system locale, with a manual override in Settings
 - **App lock with biometrics or device PIN** (Face ID / fingerprint / system passcode), relocks after 30 s in background (native only)
-- **Offline mode**: when the server is unreachable, the app keeps working on a local cache (AsyncStorage) — you can browse, create, and edit notes; changes are queued and synced automatically once the connection is back (**last-write-wins by modification date** on conflicts). An "offline mode" banner is shown while disconnected
+- **Offline mode**: when the server is unreachable, the app keeps working on a local cache (AsyncStorage, **encrypted at rest**, see [Security](#security)) — you can browse, create, and edit notes; changes are queued and synced automatically once the connection is back (**last-write-wins by modification date** on conflicts). An "offline mode" banner is shown while disconnected
 - **Onboarding**: a one-time 3-slide intro (what Pozzy is, key features, how to use the AI agent) shown before any setup; a "seen" flag is stored locally so it never appears again
 
 **Notes**
@@ -55,7 +55,7 @@ Pozzy talks to your own Poznote server over its REST API (HTTP Basic Auth + `X-U
 - Chat tab backed by any OpenAI-compatible API (OpenAI, OpenRouter, Ollama, …)
 - Base URL, API key, and model are configured in **Settings → AI chat**; the whole feature can be disabled there
 - **Agent mode with tools**: the assistant works with your notes via function calling over the same OpenAI-compatible API (30 tools, see the catalog below)
-- Chat history (including tool calls) is persisted on-device and survives app restarts; a header button clears it
+- Chat history (including tool calls) is persisted on-device (encrypted) and survives app restarts; a header button clears it
 - **Two-level memory**: recent messages are sent as-is (short-term), older conversation is compacted by the LLM into a running summary that is injected into the system prompt (long-term); the summary is recomputed only after enough new material accumulates
 - Destructive and irreversible actions require explicit user approval in the chat UI
 - **Guardrails**: approval for destructive tools, batch caps (50 by default), per-request tool-call budget (25), agent step limit, loop detection (3 identical calls), tool-result truncation (8k chars), 60s request timeout
@@ -110,12 +110,61 @@ Pozzy talks to your own Poznote server over its REST API (HTTP Basic Auth + `X-U
 
 **API coverage:** 100 client calls, all verified against the Poznote OpenAPI spec — see [docs/API-COVERAGE.md](docs/API-COVERAGE.md) (including a list of spec ↔ server discrepancies found along the way).
 
+## Security
+
+Pozzy never stores a secret or note content on disk in plain text. Secrets live in the platform keystore. Everything else that is sensitive is encrypted before it reaches AsyncStorage or the file system. All of it goes through one module, [`src/storage/secure/`](src/storage/secure/index.ts): the rest of the app never calls SecureStore directly and never writes sensitive data to AsyncStorage.
+
+**What is stored where**
+
+| Data | Storage | Protection |
+|---|---|---|
+| Server password or app password, per server profile | SecureStore `pozzy.server.<id>.password` | iOS Keychain / Android Keystore |
+| AI provider API key | SecureStore `pozzy.ai.default.apiKey` | iOS Keychain / Android Keystore |
+| Data keys: one per server, one for app-wide data | SecureStore `pozzy.server.<id>.dek`, `pozzy.app.dek` | 256-bit random keys from the platform CSPRNG (`expo-crypto`) |
+| Offline cache: notes list, folders, full notes | AsyncStorage `pozzy.cache.<id>.meta`, `pozzy.cache.<id>.note.<noteId>` | XChaCha20-Poly1305 with the server data key |
+| Queue of unsynced edits, with the temporary-to-server id map | AsyncStorage `pozzy.cache.<id>.queue` | XChaCha20-Poly1305 with the server data key |
+| AI chat history and summary, custom note templates | AsyncStorage `poznote.chatHistory.v1`, `poznote.chatSummary.v1`, `pozzy.templates.v1` | XChaCha20-Poly1305 with the app data key |
+| Attachments waiting for upload | `documentDirectory/pending-attachments/<id>/<opId>.enc` | XChaCha20-Poly1305 with the server data key. The file name exists only inside the encrypted queue |
+| Server URL, username, profile ID, theme, language, selected workspace, app-lock and onboarding flags | AsyncStorage | Not secret, stored as is |
+
+**How it is protected**
+
+- SecureStore entries use `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`. They are readable after the first unlock, so a future background sync can use them, and they never move to another device.
+- `requireAuthentication` is intentionally **not** used. Binding keys to biometrics would break background work, and re-enrolling a fingerprint would destroy the keys. The biometric app lock stays a UI-level gate.
+- Every cached value is encrypted on its own with [`@noble/ciphers`](https://github.com/paulmillr/noble-ciphers), an audited pure-JS library. The same code runs on iOS, Android, web and in Jest.
+- Each write uses a fresh random 24-byte nonce. The storage key is the associated data, so a value cannot be moved under another key unnoticed.
+- The envelope format is `enc:v1:<base64(nonce | ciphertext | tag)>`. A value without the `enc:` prefix is legacy plain text and is re-encrypted as soon as it is read.
+- The cache keeps per-note granularity. Editing one note re-encrypts only that note and the queue, in a single `multiSet`, queue first. The id map for notes created offline lives in the same record as the queue, so a crash between entries cannot separate them.
+- A read error from the keystore is retried. A secret that could not be read is never deleted by a later save.
+- Secrets, data keys and note content are never logged. Errors from the crypto layer never contain data.
+
+**Upgrading from 1.0.x.** On the first start after the update, before any sync, a one-time migration runs. It moves passwords and the API key to SecureStore. It encrypts the unsynced-edit queue first, then the rest of the offline cache, queued attachment files, chat history and templates. Every item follows the same order: read the original, write the new form, read it back and compare, and only then delete the plain-text original. An interruption at any point is safe, and the migration resumes on the next launch. The version flag `pozzy.migration.v1` is set only after every step has succeeded.
+
+**Backups, new devices and reinstalls**
+
+- **Android Auto Backup.** The `expo-secure-store` config plugin (`configureAndroidBackup: true` in `app.json`) excludes SecureStore from cloud backup and device transfer. Its rules include only shared preferences, so the AsyncStorage database and queued attachment files are not backed up either.
+- **iOS backup or a new device.** Keychain items are device-only, so a restored app can have the encrypted cache without its keys.
+- **Missing or unreadable data key.** The encrypted cache for that server is treated as lost: it is wiped and downloaded from the server again. The app never crashes. If unsynced edits were lost, the user sees a clear message once. Passwords have to be entered again.
+- **Reinstall on iOS.** The Keychain survives app deletion. On a fresh install, with no install marker and no app data in AsyncStorage, Pozzy deletes every `pozzy.*` SecureStore entry left by the previous install. SecureStore cannot list its entries, so Pozzy keeps its own key index in `pozzy.keys`.
+- **Removing a server profile** deletes its password, data key, cache, queue and queued attachment files.
+
+**Web build.** `expo-secure-store` is not available in browsers. On the web, secrets are kept in memory only, so the password has to be entered again after a page reload. The offline cache and chat history live only for the session. Custom note templates stay in `localStorage` as before, because a browser has no safe place for the key that would encrypt them. Unsynced edits made by an older version stay in `localStorage` until they are synced, then they are removed.
+
+**Known limits**
+
+- Opening an attachment writes a plain copy to the cache directory, because the system share sheet hands the file to another app. These copies are deleted on the next app start.
+- Scheduled reminder notifications contain the note title, which the OS keeps in its own notification store.
+- Encryption at rest protects data on disk and in backups. It does not protect against malware running on an unlocked, rooted or jailbroken device.
+- Attachment files are encrypted in memory in JS, so very large files use noticeable memory while they are queued or uploaded.
+
+Unit tests for this layer live in `src/storage/secure/__tests__/`, `src/storage/__tests__/offlineStore.test.ts` and `src/data/__tests__/attachments.test.ts`. They include a migration run that is interrupted at every single storage operation. The on-device checklist is in [docs/SECURITY-TESTING.md](docs/SECURITY-TESTING.md).
+
 ## Getting started
 
 ### Prerequisites
 
 - Node.js 24+ and npm (the lockfile is generated by npm 12 — older npm versions fail `npm ci` on it)
-- [Expo Go](https://expo.dev/go) on your phone (App Store / Google Play) for on-device testing
+- For a phone or an emulator: a [development build](https://docs.expo.dev/develop/development-builds/introduction/) (Android Studio or Xcode). **Expo Go is not enough**: the app uses native modules that Expo Go does not ship (speech recognition, share intent, quick actions)
 - Network access to your Poznote server from the device/browser
 
 ### Run
@@ -129,9 +178,9 @@ npm start
 
 Then pick your target:
 
-- **Phone (recommended):** scan the QR code with Expo Go. Phone and PC must be on the same network.
-- **Browser on Windows:** press `w` (or `npm run web`) — the app opens as a web page.
-- **Android emulator:** press `a` (requires Android Studio with an emulator).
+- **Android device or emulator:** `npm run android` builds and installs the development build (`expo run:android`), then connects it to the dev server. Phone and PC must be on the same network.
+- **iOS device or simulator (macOS):** `npm run ios`.
+- **Browser on Windows:** press `w` (or `npm run web`) — the app opens as a web page. See [Security](#security) for how the web build handles secrets.
 
 ### First-launch setup
 
@@ -145,7 +194,7 @@ Tap **“Check & save”**: the app validates the credentials and `/api/v1/notes
 
 ```bash
 npx tsc --noEmit                    # TypeScript
-npx jest                            # unit tests (70)
+npx jest                            # unit tests (136)
 npx expo export                     # production bundles for web/iOS/Android
 node scripts/mock-server.js 8901 &  # stateful mock of the Poznote API
 node scripts/e2e.js                 # end-to-end walkthrough (needs expo web on :8081) — 63 checks
@@ -169,8 +218,10 @@ src/chat/memory.ts                   — two-level memory (recent messages + LLM
 src/api/types.ts                     — API types (matching real server responses)
 src/context/SettingsContext.tsx      — server profiles, active server, theme, workspace
 src/context/ConnectivityContext.tsx  — online/offline status (netinfo) + manual override
-src/storage/settings.ts              — persistence (AsyncStorage): servers, theme, workspace
-src/storage/offlineStore.ts          — offline cache: notes snapshot + pending-changes queue
+src/storage/settings.ts              — settings: servers (passwords in SecureStore), theme, workspace, AI
+src/storage/offlineStore.ts          — offline cache: notes snapshot + pending-changes queue (encrypted, per note)
+src/storage/secure/                  — secrets (SecureStore), encrypted cache and attachment files, startup migration
+src/components/LostEditsNotice.tsx   — one-time message when unsynced offline edits could not be recovered
 src/data/notesRepository.ts          — offline-first notes data layer (cache ⇄ API)
 src/data/sync.ts                     — sync of queued changes on reconnect (last-write-wins by date)
 src/components/OfflineBanner.tsx     — "offline mode" banner
@@ -193,6 +244,7 @@ scripts/e2e.js                       — Playwright E2E suite
 docs/openapi.yaml                    — vendored Poznote OpenAPI spec
 docs/API-COVERAGE.md                 — API coverage checklist + spec/server discrepancies
 docs/CI-RELEASE.md                   — CI/CD: tests on push/PR, signed APK release on v* tags
+docs/SECURITY-TESTING.md             — manual checklist: secure storage, encryption, upgrade and backups
 ```
 
 ## Troubleshooting

@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import { PoznoteClient, ServerSettings } from '../api/client';
 import { clearOfflineData } from '../storage/offlineStore';
+import { runStartupMigration } from '../storage/secure';
 import { ThemeMode, ThemeProvider } from '../theme/ThemeContext';
 import { I18nProvider, LanguageMode } from '../i18n';
 import {
@@ -20,6 +21,7 @@ import {
   loadSelectedWorkspace,
   loadServers,
   loadThemeMode,
+  removeServerSecrets,
   saveAISettings,
   saveLanguageMode,
   saveOnboardingSeen,
@@ -79,7 +81,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([loadServers(), loadSelectedWorkspace(), loadThemeMode(), loadLanguageMode(), loadAISettings(), loadOnboardingSeen()])
+    // Миграция хранилища (секреты → SecureStore, шифрование кэша) — строго до
+    // загрузки профилей: иначе SyncManager начнёт синк по legacy-данным.
+    runStartupMigration()
+      .then(() =>
+        Promise.all([loadServers(), loadSelectedWorkspace(), loadThemeMode(), loadLanguageMode(), loadAISettings(), loadOnboardingSeen()]),
+      )
       .then(([serversStorage, loadedWorkspace, loadedTheme, loadedLanguage, loadedAI, loadedOnboarding]) => {
         setProfiles(serversStorage.servers);
         setActiveId(serversStorage.activeId);
@@ -122,8 +129,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       const next = profiles.filter((p) => p.id !== id);
       const nextActive = activeId === id ? (next[0]?.id ?? null) : activeId;
       persist(next, nextActive);
-      // оффлайн-кэш и очередь удалённого сервера больше не нужны
+      // Секреты, ключ данных, оффлайн-кэш, очередь и файлы вложений удалённого
+      // сервера больше не нужны
       clearOfflineData(id).catch(() => {});
+      removeServerSecrets(id).catch(() => {});
     },
     [profiles, activeId, persist],
   );

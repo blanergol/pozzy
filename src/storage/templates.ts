@@ -1,7 +1,11 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { durableAppValues } from './secure/durableAppValues';
 import { dateLocale, Locale, TranslationKey } from '../i18n';
 
-/** Шаблон заметки. builtin-шаблоны живут в коде, пользовательские — в AsyncStorage. */
+/**
+ * Шаблон заметки. builtin-шаблоны живут в коде, пользовательские — в
+ * зашифрованном кэше приложения (это текст пользователя); на web — в
+ * localStorage, см. durableAppValues.
+ */
 export interface NoteTemplate {
   id: string;
   name: string;
@@ -11,7 +15,7 @@ export interface NoteTemplate {
   builtin?: boolean;
 }
 
-const TEMPLATES_KEY = 'pozzy.templates.v1';
+export const TEMPLATES_KEY = 'pozzy.templates.v1';
 
 function makeId(): string {
   return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
@@ -63,7 +67,7 @@ export function applyPlaceholders(text: string, locale: Locale): string {
 
 export async function loadTemplates(): Promise<NoteTemplate[]> {
   try {
-    const raw = await AsyncStorage.getItem(TEMPLATES_KEY);
+    const raw = await durableAppValues.get(TEMPLATES_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as NoteTemplate[];
     if (!Array.isArray(parsed)) return [];
@@ -87,13 +91,13 @@ export async function saveTemplate(
   } else {
     list.push(saved);
   }
-  await AsyncStorage.setItem(TEMPLATES_KEY, JSON.stringify(list));
+  await durableAppValues.set(TEMPLATES_KEY, JSON.stringify(list));
   return saved;
 }
 
 export async function deleteTemplate(id: string): Promise<void> {
   const list = await loadTemplates();
-  await AsyncStorage.setItem(
+  await durableAppValues.set(
     TEMPLATES_KEY,
     JSON.stringify(list.filter((tpl) => tpl.id !== id)),
   );

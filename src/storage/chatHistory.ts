@@ -1,4 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { APP_SCOPE, encryptedCache } from './secure/encryptedCache';
+
+// История и саммари чата содержат текст заметок (ответы tools) — хранятся
+// зашифрованными ключом приложения, на web — только в рамках сессии.
 
 /** Сообщение чата для персистента хранилища (role: user/assistant/tool). */
 export interface StoredChatMessage {
@@ -7,13 +10,13 @@ export interface StoredChatMessage {
   content: string;
 }
 
-const CHAT_HISTORY_KEY = 'poznote.chatHistory.v1';
+export const CHAT_HISTORY_KEY = 'poznote.chatHistory.v1';
 /** Максимум хранимых сообщений — старые обрезаются. */
 const MAX_MESSAGES = 200;
 
 export async function loadChatHistory(): Promise<StoredChatMessage[]> {
   try {
-    const raw = await AsyncStorage.getItem(CHAT_HISTORY_KEY);
+    const raw = await encryptedCache.get(APP_SCOPE, CHAT_HISTORY_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as StoredChatMessage[];
     if (!Array.isArray(parsed)) return [];
@@ -30,11 +33,11 @@ export async function loadChatHistory(): Promise<StoredChatMessage[]> {
 }
 
 export async function saveChatHistory(messages: StoredChatMessage[]): Promise<void> {
-  await AsyncStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(messages.slice(-MAX_MESSAGES)));
+  await encryptedCache.set(APP_SCOPE, CHAT_HISTORY_KEY, JSON.stringify(messages.slice(-MAX_MESSAGES)));
 }
 
 export async function clearChatHistory(): Promise<void> {
-  await AsyncStorage.multiRemove([CHAT_HISTORY_KEY, CHAT_SUMMARY_KEY]);
+  await encryptedCache.deleteMany(APP_SCOPE, [CHAT_HISTORY_KEY, CHAT_SUMMARY_KEY]);
 }
 
 // ===== Долгосрочная память: саммари старых сообщений =====
@@ -46,11 +49,11 @@ export interface ChatSummary {
   coveredCount: number;
 }
 
-const CHAT_SUMMARY_KEY = 'poznote.chatSummary.v1';
+export const CHAT_SUMMARY_KEY = 'poznote.chatSummary.v1';
 
 export async function loadChatSummary(): Promise<ChatSummary> {
   try {
-    const raw = await AsyncStorage.getItem(CHAT_SUMMARY_KEY);
+    const raw = await encryptedCache.get(APP_SCOPE, CHAT_SUMMARY_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<ChatSummary>;
       return {
@@ -65,5 +68,5 @@ export async function loadChatSummary(): Promise<ChatSummary> {
 }
 
 export async function saveChatSummary(summary: ChatSummary): Promise<void> {
-  await AsyncStorage.setItem(CHAT_SUMMARY_KEY, JSON.stringify(summary));
+  await encryptedCache.set(APP_SCOPE, CHAT_SUMMARY_KEY, JSON.stringify(summary));
 }

@@ -14,6 +14,7 @@ import { useTheme } from './src/theme/ThemeContext';
 import { useI18n } from './src/i18n';
 import { DialogProvider } from './src/components/DialogProvider';
 import SyncManager from './src/components/SyncManager';
+import LostEditsNotice from './src/components/LostEditsNotice';
 import ShareIntentHandler from './src/components/ShareIntentHandler';
 import QuickActionsHandler from './src/components/QuickActionsHandler';
 import { AppLockProvider, AppLockScreen } from './src/security/AppLock';
@@ -168,6 +169,7 @@ function ThemedNavigation() {
       <DialogProvider>
         <AppLockProvider>
           <SyncManager />
+          <LostEditsNotice />
           <ShareIntentHandler />
           <QuickActionsHandler />
           <RootNavigator />
