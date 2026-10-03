@@ -1,6 +1,6 @@
 /**
- * Парсер markdown-подмножества: заголовки, списки, цитаты, блоки кода,
- * **bold**, *italic*, `code`, [links](url). Чистые функции без React — для тестов.
+ * Parser for a markdown subset: headings, lists, quotes, code blocks,
+ * **bold**, *italic*, `code`, [links](url). Pure functions without React, for tests.
  */
 
 export interface InlineSpan {
@@ -53,7 +53,7 @@ export function parseBlocks(text: string): Block[] {
   while (i < lines.length) {
     const line = lines[i];
 
-    // блок кода ```
+    // code block ```
     if (line.trimStart().startsWith('```')) {
       const codeLines: string[] = [];
       i += 1;
@@ -61,7 +61,7 @@ export function parseBlocks(text: string): Block[] {
         codeLines.push(lines[i]);
         i += 1;
       }
-      i += 1; // закрывающий ```
+      i += 1; // closing ```
       blocks.push({ type: 'code', content: codeLines.join('\n') });
       continue;
     }
@@ -105,7 +105,7 @@ export function parseBlocks(text: string): Block[] {
       continue;
     }
 
-    // обычный абзац: склеиваем соседние непустые строки
+    // plain paragraph: join adjacent non-empty lines
     const paraLines: string[] = [];
     while (
       i < lines.length &&

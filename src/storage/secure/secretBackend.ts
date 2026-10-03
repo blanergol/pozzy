@@ -2,10 +2,10 @@ import * as SecureStore from 'expo-secure-store';
 import { SecretBackend } from './types';
 
 /**
- * AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: доступно после первой разблокировки
- * (фоновые задачи тоже смогут читать) и не переезжает на другое устройство
- * через бэкап/миграцию. requireAuthentication намеренно НЕ используется:
- * биометрия остаётся UI-замком (AppLock), иначе смена отпечатков уничтожит ключи.
+ * AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: accessible after the first unlock
+ * (background tasks can read too) and does not move to another device
+ * via backup/migration. requireAuthentication is deliberately NOT used:
+ * biometrics stay a UI lock (AppLock), otherwise changing fingerprints would destroy the keys.
  */
 const OPTIONS: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,

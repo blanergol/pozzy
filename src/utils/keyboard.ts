@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { Keyboard, Platform } from 'react-native';
 
 /**
- * Отступ снизу под клавиатуру для Android 15+ (edge-to-edge).
- * На Android 15 adjustResize игнорируется системой, а KeyboardAvoidingView
- * внутри react-native-screens не получает корректные инсеты — поэтому
- * отступ применяем вручную по событиям клавиатуры. На старых Android
- * работает нативный adjustResize, хук возвращает 0.
+ * Bottom padding for the keyboard on Android 15+ (edge-to-edge).
+ * On Android 15 the system ignores adjustResize, and KeyboardAvoidingView
+ * inside react-native-screens does not receive correct insets — so the
+ * padding is applied manually from keyboard events. On older Android
+ * native adjustResize works and the hook returns 0.
  */
 export function useAndroidKeyboardPadding(): number {
   const [height, setHeight] = useState(0);

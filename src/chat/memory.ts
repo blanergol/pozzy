@@ -3,23 +3,23 @@ import { loadChatSummary, saveChatSummary } from '../storage/chatHistory';
 import { AISettings } from '../storage/settings';
 
 /**
- * Память агента, базовая реализация:
- * - краткосрочная: последние WINDOW сообщений отправляются в LLM как есть;
- * - долгосрочная: более старые сообщения схлопываются в саммари (тем же LLM)
- *   и подмешиваются в системный промпт.
- * Саммари пересчитывается только когда накопилось >= SUMMARIZE_AFTER новых
- * старых сообщений — не на каждый запрос.
+ * Agent memory, basic implementation:
+ * - short-term: the last WINDOW messages are sent to the LLM as is;
+ * - long-term: older messages are collapsed into a summary (by the same LLM)
+ *   and mixed into the system prompt.
+ * The summary is recomputed only once >= SUMMARIZE_AFTER new old messages
+ * have accumulated — not on every request.
  */
 
 const WINDOW = 12;
 const SUMMARIZE_AFTER = 6;
-/** Маркер служебного запроса — по нему мок/e2e отличают саммаризацию от обычного чата. */
+/** Marker of a service request — lets the mock/e2e tell summarization apart from regular chat. */
 const SUMMARY_PROMPT_PREFIX = 'SUMMARIZE_CONVERSATION';
 
 export interface MemoryContext {
-  /** История для отправки (последние WINDOW сообщений). */
+  /** History to send (the last WINDOW messages). */
   history: { role: 'user' | 'assistant'; content: string }[];
-  /** Саммари старых сообщений для системного промпта (если есть). */
+  /** Summary of older messages for the system prompt (if any). */
   summary?: string;
 }
 
@@ -53,7 +53,7 @@ export async function buildMemoryContext(
     const stored = await loadChatSummary();
     const freshCount = olderCount - stored.coveredCount;
 
-    // саммари актуально или накопилось мало нового — используем как есть
+    // the summary is up to date or too little is new — use it as is
     if (freshCount < SUMMARIZE_AFTER) {
       return { history: windowed, summary: stored.summary || undefined };
     }
@@ -68,7 +68,7 @@ export async function buildMemoryContext(
     await saveChatSummary({ summary, coveredCount: olderCount });
     return { history: windowed, summary: summary || undefined };
   } catch {
-    // память — вспомогательная фича: при сбое просто работаем без саммари
+    // memory is an auxiliary feature: on failure we simply work without a summary
     return { history: windowed };
   }
 }

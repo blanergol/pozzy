@@ -2,7 +2,7 @@ import { translate } from '../../i18n';
 import { err, findByQuery, resolveFolderId } from '../toolHelpers';
 import { PoznoteTool } from './types';
 
-/** Пакетные операции над заметками по текстовому запросу (с фильтрами по датам). */
+/** Batch operations on notes matching a text query (with date filters). */
 export const BATCH_TOOLS: PoznoteTool[] = [
   {
     spec: {

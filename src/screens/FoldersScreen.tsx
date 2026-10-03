@@ -32,7 +32,7 @@ type Props = CompositeScreenProps<
   NativeStackScreenProps<RootStackParamList>
 >;
 
-// Пагинация списка: показываем порциями, догружаем при скролле
+// List pagination: render in chunks, load more on scroll
 const PAGE_SIZE = 10;
 
 export default function FoldersScreen({ navigation }: Props) {
@@ -77,7 +77,7 @@ export default function FoldersScreen({ navigation }: Props) {
       if (mode === 'refresh') setIsRefreshing(true);
       try {
         const ws = workspace ?? undefined;
-        // Оффлайн — папки из локального кэша, счётчики недоступны
+        // Offline: folders come from the local cache, counts are unavailable
         const { folders: folderList, fromCache } = await repoListFolders(repoCtx, ws);
         const folderCounts = fromCache ? {} : await client.getFolderCounts(ws);
         setFolders(folderList);
@@ -97,13 +97,13 @@ export default function FoldersScreen({ navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      // Повторный фокус: без спиннера, а в пределах TTL — вообще без сети
+      // Re-focus: no spinner, and within the TTL no network request at all
       if (isFresh(lastLoadRef.current)) return;
       load(lastLoadRef.current.at === 0 ? 'initial' : 'silent');
     }, [load]),
   );
 
-  // Плавная догрузка следующей порции при скролле
+  // Smoothly load the next chunk on scroll
   const handleLoadMore = useCallback(() => {
     if (isLoadingMore || visibleCount >= folders.length) return;
     setIsLoadingMore(true);
@@ -298,7 +298,7 @@ export default function FoldersScreen({ navigation }: Props) {
         onClose={() => setActionsFolder(null)}
       />
 
-      {/* Создание/переименование папки */}
+      {/* Create/rename folder */}
       <Modal
         visible={nameModal !== null}
         transparent

@@ -47,7 +47,7 @@ export interface ServerSettings {
   userId: string;
 }
 
-/** Приводит адрес сервера к виду https://host[:port] без завершающего слэша. */
+/** Normalizes the server address to https://host[:port] with no trailing slash. */
 export function normalizeBaseUrl(url: string): string {
   let u = url.trim();
   if (!u) return u;
@@ -64,7 +64,7 @@ export class ApiError extends Error {
   }
 }
 
-/** Заметка заблокирована другой сессией редактирования (423/409 + данные лока). */
+/** The note is locked by another editing session (423, or 409 with lock details on servers built on the old spec). */
 export class LockConflictError extends ApiError {
   lock: unknown;
 
@@ -74,7 +74,7 @@ export class LockConflictError extends ApiError {
   }
 }
 
-/** Человекочитаемое описание ошибки запроса. */
+/** Human-readable description of a request error. */
 export function describeError(error: unknown): string {
   if (error instanceof LockConflictError) {
     return translate('error.lock');
@@ -129,13 +129,15 @@ export class PoznoteClient {
     try {
       json = text ? JSON.parse(text) : null;
     } catch {
-      // не-JSON ответ (например HTML от прокси) — обработаем ниже по статусу
+      // non-JSON response (e.g. HTML from a proxy) — handled below based on the status
     }
 
     if (!res.ok) {
       const message = json?.error ?? json?.message ?? `HTTP ${res.status}`;
-      // Сервер отвечает 423 (по коду) / 409 (по спеке) при чужом edit-lock'е
-      if (res.status === 423 || res.status === 409) {
+      // Someone else holds the edit lock: the server answers 423 (documented since Poznote 6.101.0).
+      // 409 counts as a lock conflict only when it carries the lock details (servers built on the
+      // old spec); otherwise 409 is a version conflict or an ambiguous folder name
+      if (res.status === 423 || (res.status === 409 && json?.lock)) {
         throw new LockConflictError(res.status, message, json?.lock ?? null);
       }
       throw new ApiError(res.status, message);
@@ -145,7 +147,7 @@ export class PoznoteClient {
 
   // ===== Users =====
 
-  /** Текущий пользователь по учётным данным (X-User-ID не требуется). */
+  /** Current user by credentials (X-User-ID is not required). */
   async getMe(): Promise<CurrentUser> {
     return this.request<CurrentUser>('GET', '/users/me', { withUserId: false });
   }
@@ -166,11 +168,11 @@ export class PoznoteClient {
       'GET',
       `/notes?${query.toString()}`,
     );
-    // SQLite через PDO может вернуть favorite строкой — нормализуем в number
+    // SQLite via PDO may return favorite as a string — normalize to number
     return (res.notes ?? []).map((n) => ({ ...n, favorite: Number(n.favorite ?? 0) }));
   }
 
-  /** Поиск с excerpt'ами: GET /notes/search */
+  /** Search with excerpts: GET /notes/search */
   async searchNotes(params: SearchNotesParams): Promise<NoteListItem[]> {
     const query = new URLSearchParams({ q: params.q });
     if (params.workspace) query.set('workspace', params.workspace);
@@ -184,7 +186,7 @@ export class PoznoteClient {
     return res.notes ?? res.results ?? [];
   }
 
-  /** Заметки с вложениями: GET /notes/with-attachments */
+  /** Notes with attachments: GET /notes/with-attachments */
   async listNotesWithAttachments(): Promise<NoteListItem[]> {
     const res = await this.request<{ success: boolean; notes?: NoteListItem[] }>(
       'GET',
@@ -193,7 +195,7 @@ export class PoznoteClient {
     return res.notes ?? [];
   }
 
-  /** Разрешить заметку по заголовку в workspace: GET /notes/resolve */
+  /** Resolve a note by heading within a workspace: GET /notes/resolve */
   async resolveNote(reference: string, workspace: string): Promise<NoteDetails> {
     const query = new URLSearchParams({ reference, workspace });
     const res = await this.request<{ success: boolean; note: NoteDetails }>(
@@ -213,7 +215,7 @@ export class PoznoteClient {
   }
 
   async createNote(payload: CreateNotePayload): Promise<number> {
-    // Сервер возвращает { success, note: { id, ... } } (в спеке указан плоский id — неточно)
+    // The server returns { success, note: { id, ... } } (the spec lists a flat id — inaccurate)
     const res = await this.request<{
       success: boolean;
       id?: number;
@@ -235,7 +237,7 @@ export class PoznoteClient {
     await this.request('PATCH', `/notes/${id}`, { body });
   }
 
-  /** Удаление: в корзину (по умолчанию) или навсегда (permanent=true). */
+  /** Delete: to trash (default) or permanently (permanent=true). */
   async deleteNote(id: number, permanent = false): Promise<void> {
     await this.request('DELETE', `/notes/${id}${permanent ? '?permanent=true' : ''}`);
   }
@@ -391,7 +393,7 @@ export class PoznoteClient {
     return res.folder;
   }
 
-  /** Счётчики заметок: { [folderId]: n, uncategorized: n, Favorites: n }. */
+  /** Note counts: { [folderId]: n, uncategorized: n, Favorites: n }. */
   async getFolderCounts(workspace?: string): Promise<FolderCounts> {
     const query = new URLSearchParams();
     if (workspace) query.set('workspace', workspace);
@@ -483,7 +485,7 @@ export class PoznoteClient {
     await this.request('PUT', `/folders/${id}/color`, { body: { color } });
   }
 
-  /** Переместить все заметки папки в корзину. */
+  /** Move all notes of the folder to trash. */
   async emptyFolder(id: number): Promise<void> {
     await this.request('POST', `/folders/${id}/empty`);
   }
@@ -502,13 +504,13 @@ export class PoznoteClient {
     return res.notes ?? [];
   }
 
-  /** Очистить корзину (необратимо). */
+  /** Empty the trash (irreversible). */
   async emptyTrash(workspace?: string): Promise<void> {
     const qs = workspace ? `?${new URLSearchParams({ workspace }).toString()}` : '';
     await this.request('DELETE', `/trash${qs}`);
   }
 
-  /** Удалить заметку из корзины навсегда. */
+  /** Permanently delete a note from the trash. */
   async deleteFromTrash(id: number): Promise<void> {
     await this.request('DELETE', `/trash/${id}`);
   }
@@ -572,14 +574,14 @@ export class PoznoteClient {
     return res.attachments ?? [];
   }
 
-  /** Загрузка файла (multipart/form-data). Работает на нативных платформах (RN FormData). */
+  /** File upload (multipart/form-data). Works on native platforms (RN FormData). */
   async uploadAttachment(
     noteId: number,
     file: UploadFile,
     workspace?: string,
   ): Promise<{ attachmentId: string; filename: string }> {
     const formData = new FormData();
-    // React Native умеет отправлять {uri, name, type} как файл
+    // React Native can send {uri, name, type} as a file
     formData.append('file', {
       uri: file.uri,
       name: file.name,
@@ -613,7 +615,7 @@ export class PoznoteClient {
     return { attachmentId: json?.attachment_id ?? '', filename: json?.filename ?? file.name };
   }
 
-  /** Скачивание вложения в bytes (для сохранения через expo-file-system). */
+  /** Download an attachment as bytes (for saving via expo-file-system). */
   async downloadAttachment(
     noteId: number,
     attachmentId: string,
@@ -647,7 +649,7 @@ export class PoznoteClient {
     await this.request('DELETE', `/notes/${noteId}/attachments/${attachmentId}`);
   }
 
-  // ===== Notifications (глобальные reminders) =====
+  // ===== Notifications (global reminders) =====
 
   async listNotifications(workspace?: string): Promise<NotificationItem[]> {
     const query = new URLSearchParams();

@@ -32,35 +32,35 @@ import {
 } from '../storage/settings';
 
 interface SettingsContextValue {
-  /** Все сохранённые серверы. */
+  /** All saved servers. */
   profiles: ServerProfile[];
-  /** Активный сервер (текущее подключение). */
+  /** Active server (current connection). */
   activeProfile: ServerProfile | null;
   client: PoznoteClient | null;
   isLoading: boolean;
-  /** Выбранное пространство; null = все пространства. */
+  /** Selected workspace; null = all workspaces. */
   workspace: string | null;
   setWorkspace: (workspace: string | null) => void;
-  /** Добавить новый сервер и сделать активным. Возвращает id профиля. */
+  /** Add a new server and make it active. Returns the profile id. */
   addProfile: (settings: ServerSettings) => Promise<string>;
-  /** Обновить существующий профиль (без смены id). */
+  /** Update an existing profile (id unchanged). */
   updateProfile: (profile: ServerProfile) => Promise<void>;
-  /** Удалить профиль. Если удалён активный — активным станет первый оставшийся. */
+  /** Remove a profile. If the active one is removed, the first remaining one becomes active. */
   removeProfile: (id: string) => Promise<void>;
-  /** Переключиться на другой сервер. */
+  /** Switch to another server. */
   switchProfile: (id: string) => Promise<void>;
-  /** Режим темы. */
+  /** Theme mode. */
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
-  /** Язык интерфейса. */
+  /** UI language. */
   languageMode: LanguageMode;
   setLanguageMode: (mode: LanguageMode) => void;
-  /** Настройки OpenAI-совместимого API для AI-чата. */
+  /** OpenAI-compatible API settings for the AI chat. */
   aiSettings: AISettings;
   saveAiSettings: (settings: AISettings) => void;
-  /** true = онбординг уже показан (не показываем повторно). */
+  /** true = onboarding has already been shown (not shown again). */
   onboardingSeen: boolean;
-  /** Отметить онбординг как пройденный (пишется в кэш). */
+  /** Mark onboarding as completed (written to the cache). */
   completeOnboarding: () => void;
 }
 
@@ -77,12 +77,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const [languageMode, setLanguageModeState] = useState<LanguageMode>('system');
   const [aiSettings, setAiSettings] = useState<AISettings>(DEFAULT_AI_SETTINGS);
-  const [onboardingSeen, setOnboardingSeen] = useState(true); // до загрузки не показываем
+  const [onboardingSeen, setOnboardingSeen] = useState(true); // not shown until loaded
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Миграция хранилища (секреты → SecureStore, шифрование кэша) — строго до
-    // загрузки профилей: иначе SyncManager начнёт синк по legacy-данным.
+    // Storage migration (secrets → SecureStore, cache encryption) must run strictly before
+    // loading profiles: otherwise SyncManager would start syncing on legacy data.
     runStartupMigration()
       .then(() =>
         Promise.all([loadServers(), loadSelectedWorkspace(), loadThemeMode(), loadLanguageMode(), loadAISettings(), loadOnboardingSeen()]),
@@ -129,8 +129,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       const next = profiles.filter((p) => p.id !== id);
       const nextActive = activeId === id ? (next[0]?.id ?? null) : activeId;
       persist(next, nextActive);
-      // Секреты, ключ данных, оффлайн-кэш, очередь и файлы вложений удалённого
-      // сервера больше не нужны
+      // The removed server's secrets, data key, offline cache, queue and attachment
+      // files are no longer needed
       clearOfflineData(id).catch(() => {});
       removeServerSecrets(id).catch(() => {});
     },
@@ -141,7 +141,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     async (id: string): Promise<void> => {
       if (id === activeId) return;
       persist(profiles, id);
-      // пространство привязано к серверу — сбрасываем фильтр
+      // the workspace is tied to the server: reset the filter
       setWorkspaceState(null);
       saveSelectedWorkspace(null).catch(() => {});
     },
@@ -178,8 +178,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     [profiles, activeId],
   );
 
-  // Клиент зависит только от профиля: смена темы/языка не должна его
-  // пересоздавать — иначе все экраны заново дёргают API по смене identity.
+  // The client depends only on the profile: a theme/language change must not
+  // recreate it, otherwise every screen re-hits the API when its identity changes.
   const client = useMemo(
     () => (activeProfile ? new PoznoteClient(activeProfile) : null),
     [activeProfile],
@@ -243,5 +243,5 @@ export function useSettings(): SettingsContextValue {
   return ctx;
 }
 
-/** Совместимость: сброс рабочей области (используется при удалении всех серверов). */
+/** Compatibility: workspace reset (used when all servers are removed). */
 export { clearWorkspace };

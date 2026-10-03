@@ -1,7 +1,7 @@
 import { err, NOTE_REF, resolveNoteOrError } from '../toolHelpers';
 import { PoznoteTool } from './types';
 
-/** Теги, избранное, копирование. */
+/** Tags, favorites, copying. */
 export const MISC_TOOLS: PoznoteTool[] = [
   {
     spec: {

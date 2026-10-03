@@ -45,7 +45,7 @@ describe('pending attachments (encrypted at rest)', () => {
       name: 'report.pdf',
       mimeType: 'application/pdf',
     });
-    fs.__files.delete('file:///picker/report.pdf'); // кэш пикера очищен системой
+    fs.__files.delete('file:///picker/report.pdf'); // picker cache purged by the system
     expect(op.payload.localUri).toBe(`file:///doc/pending-attachments/${P}/${op.opId}.enc`);
     expect([...fs.__files.keys()]).toEqual([op.payload.localUri]);
     expect(filesText()).not.toContain('TOP-SECRET');
@@ -143,7 +143,7 @@ describe('pending attachments (encrypted at rest)', () => {
         ],
       }),
     );
-    await loadOfflineData(P); // конвертация очереди
+    await loadOfflineData(P); // queue conversion
     const multiSet = jest.spyOn(AsyncStorage, 'multiSet').mockRejectedValueOnce(new Error('disk full'));
     expect(await migrateLegacyAttachmentFiles(P)).toEqual([legacyUri]);
     multiSet.mockRestore();

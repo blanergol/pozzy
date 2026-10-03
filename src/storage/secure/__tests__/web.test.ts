@@ -7,7 +7,7 @@ import { loadTemplates } from '../../templates';
 import { runStartupMigration } from '../migration';
 import { rawAsyncStorage, restartApp, secureStoreMock, wipeDevice } from '../../../../test/secureTestUtils';
 
-// Эмуляция web-сборки: Metro подставил бы *.web.ts
+// Emulating the web build: Metro would substitute *.web.ts
 jest.mock('../secretBackend', () => jest.requireActual('../secretBackend.web'));
 jest.mock('../cacheBackend', () => jest.requireActual('../cacheBackend.web'));
 jest.mock('@react-native-async-storage/async-storage', () =>
@@ -41,11 +41,11 @@ describe('web: секреты в памяти, кэш на сессию', () => 
     await runStartupMigration();
     expect(JSON.stringify(rawAsyncStorage())).not.toContain('WEB-SECRET');
     expect(rawAsyncStorage()['poznote.chatHistory.v1']).toBeUndefined();
-    // шаблоны на web остаются в localStorage и переживают перезагрузку
+    // templates on web stay in localStorage and survive a reload
     expect(rawAsyncStorage()['pozzy.templates.v1']).toContain('TPL');
     restartApp();
     expect((await loadTemplates())[0].content).toBe('TPL');
-    // в рамках сессии всё доступно
+    // within the session everything is available
     expect((await loadServers()).servers[0].password).toBe('WEB-SECRET');
     expect((await loadChatHistory())[0].content).toBe('CHAT');
   });
@@ -60,21 +60,21 @@ describe('web: секреты в памяти, кэш на сессию', () => 
     );
     const data = await loadOfflineData(P);
     expect(data.pending).toHaveLength(1);
-    // кэш заметок ушёл из localStorage, legacy-операция осталась до синка
+    // the notes cache is gone from localStorage, the legacy operation stays until sync
     expect(rawAsyncStorage()[legacyOfflineKey(P)]).not.toContain('CACHED-NOTE');
     expect(rawAsyncStorage()[legacyOfflineKey(P)]).toContain('EDIT');
 
-    // новая правка в этой сессии в localStorage не попадает
+    // a new edit in this session doesn't go to localStorage
     data.pending.push({ opId: 'n1', type: 'update', noteId: 2, payload: { content: 'NEW-SESSION-EDIT' }, clientTs: 'y' });
     await saveOfflineData(P, data);
     expect(rawAsyncStorage()[legacyOfflineKey(P)]).not.toContain('NEW-SESSION-EDIT');
 
-    // «перезагрузка страницы» до синка: legacy-правка на месте
+    // "page reload" before sync: the legacy edit is still there
     restartApp();
     const reloaded = await loadOfflineData(P);
     expect(reloaded.pending.map((op) => op.opId)).toEqual(['u1']);
 
-    // синк отправил операцию — legacy-ключ удаляется
+    // sync sent the operation — the legacy key is deleted
     reloaded.pending = [];
     await saveOfflineData(P, reloaded);
     expect(rawAsyncStorage()[legacyOfflineKey(P)]).toBeUndefined();

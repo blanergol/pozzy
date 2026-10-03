@@ -1,11 +1,11 @@
 /**
- * Свежесть данных экранов: повторный фокус не идёт в сеть, если с последней
- * успешной загрузки прошло меньше TTL и с тех пор не было мутаций.
+ * Screen data freshness: a repeated focus does not hit the network if less than
+ * TTL has passed since the last successful load and there have been no mutations since.
  */
 
 export const FOCUS_TTL_MS = 60_000;
 
-/** Метка успешной загрузки. version — глобальный счётчик мутаций. */
+/** Marker of a successful load. version is the global mutation counter. */
 export interface FreshMark {
   at: number;
   version: number;
@@ -15,7 +15,7 @@ export const STALE_MARK: FreshMark = { at: 0, version: -1 };
 
 let dataVersion = 0;
 
-/** Данные на сервере изменились — экраны перечитают их при следующем фокусе. */
+/** Data on the server has changed — screens will re-fetch it on the next focus. */
 export function bumpDataVersion(): void {
   dataVersion += 1;
 }

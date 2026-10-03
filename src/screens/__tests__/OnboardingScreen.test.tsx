@@ -3,7 +3,7 @@ import renderer, { act } from 'react-test-renderer';
 import { jest, describe, it, expect } from '@jest/globals';
 import OnboardingScreen from '../OnboardingScreen';
 
-// Мокаем safe-area: в тесте нет SafeAreaProvider
+// Mock safe-area: the test has no SafeAreaProvider
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
@@ -19,7 +19,7 @@ describe('OnboardingScreen', () => {
       .findAllByType(require('react-native').Text)
       .map((n) => String(n.props.children ?? ''))
       .join('\n');
-    // заголовки трёх слайдов (дефолтная локаль — ru)
+    // titles of the three slides (default locale is ru)
     expect(flat).toContain('Ваши заметки. Ваш сервер.');
     expect(flat).toContain('Всё для работы с заметками');
     expect(flat).toContain('AI-агент — ваш помощник');

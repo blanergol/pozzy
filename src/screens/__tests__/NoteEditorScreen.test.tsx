@@ -3,7 +3,7 @@ import renderer, { act } from 'react-test-renderer';
 import { jest, describe, it, expect } from '@jest/globals';
 import NoteEditorScreen from '../NoteEditorScreen';
 
-// Мокаем контекст настроек: фейковый клиент с ответами «как у сервера»
+// Mock the settings context: a fake client with server-like responses
 jest.mock('../../context/SettingsContext', () => {
   const note = {
     id: 1,
@@ -57,7 +57,7 @@ jest.mock('../../context/SettingsContext', () => {
   };
 });
 
-// Мокаем connectivity: в тесте всегда «онлайн»
+// Mock connectivity: always "online" in the test
 jest.mock('../../context/ConnectivityContext', () => ({
   useConnectivity: () => ({
     isOnline: true,
@@ -66,12 +66,12 @@ jest.mock('../../context/ConnectivityContext', () => ({
   }),
 }));
 
-// AsyncStorage нужен offlineStore (репозиторий), в jest нет нативного модуля
+// offlineStore (the repository) needs AsyncStorage; jest has no native module
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
 );
 
-// Мокаем DialogProvider: экран использует useDialog, в тесте провайдера нет
+// Mock DialogProvider: the screen uses useDialog and the test has no provider
 jest.mock('../../components/DialogProvider', () => ({
   useDialog: () => ({
     alert: jest.fn(),
@@ -80,7 +80,7 @@ jest.mock('../../components/DialogProvider', () => ({
   }),
 }));
 
-// Мокаем safe-area: в тесте нет SafeAreaProvider
+// Mock safe-area: the test has no SafeAreaProvider
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
@@ -101,16 +101,16 @@ describe('NoteEditorScreen', () => {
     await act(async () => {
       tree = renderer.create(<NoteEditorScreen navigation={navigation} route={route} />);
     });
-    // даём промисам load()/acquireLock() завершиться
+    // let the load()/acquireLock() promises settle
     await act(async () => {
       await new Promise((r) => setTimeout(r, 50));
     });
     const json = tree!.toJSON();
     expect(json).toBeTruthy();
-    // контент заметки попал в TextInput
+    // the note content made it into the TextInput
     const flat = JSON.stringify(json);
     expect(flat).toContain('Привет, мир');
-    // размонтируем: очистит интервалы heartbeat блокировки, иначе jest не завершится
+    // unmount: clears the lock heartbeat intervals, otherwise jest won't exit
     await act(async () => {
       tree!.unmount();
     });

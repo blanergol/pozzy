@@ -74,7 +74,7 @@ interface Props {
   children: React.ReactNode;
 }
 
-/** Палитра темы. Источник mode — SettingsContext (с персистом). */
+/** Theme palette. mode comes from SettingsContext (persisted). */
 export function ThemeProvider({ mode, children }: Props) {
   const systemScheme = useColorScheme();
   const value = useMemo<ThemeContextValue>(() => {
@@ -88,7 +88,7 @@ export function useTheme(): ThemeContextValue {
   return useContext(ThemeContext);
 }
 
-/** Хелпер для экранов: мемоизированные стили по палитре. */
+/** Helper for screens: memoized styles derived from the palette. */
 export function useThemedStyles<T>(factory: (colors: ThemeColors) => T, colors: ThemeColors): T {
   return useMemo(() => factory(colors), [factory, colors]);
 }

@@ -4,7 +4,7 @@ import { ThemeMode } from '../theme/ThemeContext';
 import { LanguageMode } from '../i18n';
 import { secretKeys, secrets } from './secure/secrets';
 
-/** Сохранённый профиль подключения к серверу. */
+/** Saved server connection profile. */
 export interface ServerProfile extends ServerSettings {
   id: string;
 }
@@ -15,8 +15,8 @@ interface ServersStorage {
 }
 
 /*
- * Пароли профилей и API-ключ AI живут только в SecureStore (см. secure/secrets).
- * В AsyncStorage — несекретные поля: адрес, логин, userId, настройки UI.
+ * Profile passwords and the AI API key live only in SecureStore (see secure/secrets).
+ * AsyncStorage holds the non-secret fields: address, login, userId, UI settings.
  */
 
 export const SERVERS_KEY = 'poznote.servers.v1';
@@ -25,14 +25,14 @@ const LANGUAGE_MODE_KEY = 'poznote.languageMode.v1';
 const WORKSPACE_KEY = 'poznote.selectedWorkspace.v1';
 export const AI_SETTINGS_KEY = 'poznote.aiSettings.v1';
 export const ONBOARDING_KEY = 'poznote.onboarding.v1';
-// legacy формат первой версии приложения (один сервер)
+// legacy format of the first app version (single server)
 export const LEGACY_SETTINGS_KEY = 'poznote.serverSettings.v1';
 
 function makeId(): string {
   return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
 }
 
-/** Профиль в том виде, как он лежит в AsyncStorage (legacy — с паролем). */
+/** Profile as it is stored in AsyncStorage (legacy — with the password). */
 type StoredProfile = Omit<ServerProfile, 'password'> & { password?: string };
 
 async function readServersRaw(): Promise<{ servers: StoredProfile[]; activeId: string | null } | null> {
@@ -53,7 +53,7 @@ function stripPassword(profile: StoredProfile): StoredProfile {
   return rest;
 }
 
-/** id всех профилей из AsyncStorage (для миграции кэша). */
+/** ids of all profiles from AsyncStorage (for cache migration). */
 export async function listStoredProfileIds(): Promise<string[]> {
   try {
     return ((await readServersRaw())?.servers ?? []).map((p) => p.id);
@@ -63,9 +63,9 @@ export async function listStoredProfileIds(): Promise<string[]> {
 }
 
 /**
- * Legacy-формат первой версии (один сервер) → список профилей. Пароль
- * переносится в список как есть; в SecureStore его затем переносит
- * migrateServerSecrets (запись → проверка → удаление из JSON).
+ * Legacy first-version format (single server) → list of profiles. The password
+ * is carried into the list as is; migrateServerSecrets then moves it to
+ * SecureStore (write → verify → remove from JSON).
  */
 export async function migrateLegacySingleServer(): Promise<void> {
   const raw = await AsyncStorage.getItem(LEGACY_SETTINGS_KEY);
@@ -95,10 +95,10 @@ export async function migrateLegacySingleServer(): Promise<void> {
 }
 
 /**
- * Перенос паролей профилей в SecureStore: записать → прочитать и сравнить →
- * только потом убрать из JSON. Прерывание безопасно: пока пароль в JSON, он
- * остаётся источником и переносится заново при следующем запуске.
- * true = в AsyncStorage не осталось ни одного пароля.
+ * Move profile passwords to SecureStore: write → read back and compare →
+ * only then remove from JSON. Interruption is safe: while the password is in JSON,
+ * it remains the source and is migrated again on the next launch.
+ * true = no passwords are left in AsyncStorage.
  */
 export async function migrateServerSecrets(): Promise<boolean> {
   let stored;
@@ -137,7 +137,7 @@ export async function loadServers(): Promise<ServersStorage> {
       const servers = await Promise.all(
         stored.servers.map(async (p): Promise<ServerProfile> => {
           const secret = await secrets.get(secretKeys.serverPassword(p.id));
-          // Незавершённая миграция: пароль ещё в JSON — используем его
+          // Unfinished migration: the password is still in JSON — use it
           const password = secret ?? (typeof p.password === 'string' ? p.password : '');
           return { ...p, password };
         }),
@@ -150,9 +150,9 @@ export async function loadServers(): Promise<ServersStorage> {
   return { servers: [], activeId: null };
 }
 
-// Записи списка профилей и удаление секретов идут по одной цепочке: иначе
-// более ранний saveServers, закончившийся позже, вернул бы удалённый профиль
-// или заново записал его пароль.
+// Profile list writes and secret removals go through a single chain: otherwise
+// an earlier saveServers that finished later would bring back a removed profile
+// or write its password again.
 let serversChain: Promise<unknown> = Promise.resolve();
 const removedServers = new Set<string>();
 
@@ -163,12 +163,12 @@ function enqueueServers<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Сохранить список профилей: пароли — в SecureStore, в AsyncStorage — только
- * несекретные поля. Пустой пароль секрет НЕ удаляет: он означает «не удалось
- * прочитать» (или web после перезагрузки), а не «пользователь стёр пароль» —
- * форма не даёт сохранить профиль без пароля. Удаляет секреты только
- * removeServerSecrets. Если SecureStore недоступен, профиль всё равно
- * сохраняется, но пароль никогда не попадает в AsyncStorage.
+ * Save the profile list: passwords go to SecureStore, AsyncStorage gets only the
+ * non-secret fields. An empty password does NOT delete the secret: it means "could
+ * not read" (or web after a reload), not "the user cleared the password" — the form
+ * doesn't allow saving a profile without a password. Only removeServerSecrets
+ * deletes secrets. If SecureStore is unavailable, the profile is still saved,
+ * but the password never ends up in AsyncStorage.
  */
 export function saveServers(storage: ServersStorage): Promise<void> {
   return enqueueServers(async () => {
@@ -188,13 +188,13 @@ export function saveServers(storage: ServersStorage): Promise<void> {
   });
 }
 
-/** Удалить секреты сервера (пароль, ключ данных) — после всех ожидающих записей профилей. */
+/** Delete the server's secrets (password, data key) — after all pending profile writes. */
 export function removeServerSecrets(serverId: string): Promise<void> {
   removedServers.add(serverId);
   return enqueueServers(() => secrets.deleteServer(serverId));
 }
 
-/** null = все пространства. */
+/** null = all workspaces. */
 export async function loadSelectedWorkspace(): Promise<string | null> {
   try {
     return await AsyncStorage.getItem(WORKSPACE_KEY);
@@ -243,12 +243,12 @@ export async function saveLanguageMode(mode: LanguageMode): Promise<void> {
   await AsyncStorage.setItem(LANGUAGE_MODE_KEY, mode);
 }
 
-/** Настройки OpenAI-совместимого API для AI-чата. */
+/** OpenAI-compatible API settings for the AI chat. */
 export interface AISettings {
-  /** false = весь AI-функционал скрыт (вкладка чата и настройки). */
+  /** false = all AI functionality is hidden (the chat tab and settings). */
   enabled: boolean;
   baseUrl: string;
-  /** Хранится в SecureStore, не в AsyncStorage. */
+  /** Stored in SecureStore, not in AsyncStorage. */
   apiKey: string;
   model: string;
 }
@@ -260,10 +260,10 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
   model: 'gpt-4o-mini',
 };
 
-// Провайдер AI в приложении один и без id
+// The app has a single AI provider with no id
 const AI_API_KEY = secretKeys.aiApiKey();
-// Ключ не удалось прочитать: пустое apiKey в состоянии не значит «пользователь
-// стёр ключ», и сохранение других настроек AI не должно его удалять.
+// The key could not be read: an empty apiKey in state doesn't mean "the user
+// cleared the key", and saving other AI settings must not delete it.
 let aiKeyUnreadable = false;
 
 async function readAIKey(): Promise<string | null> {
@@ -283,7 +283,7 @@ export async function loadAISettings(): Promise<AISettings> {
     const secret = await readAIKey();
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<AISettings>;
-      // Незавершённая миграция: ключ ещё в JSON — используем его
+      // Unfinished migration: the key is still in JSON — use it
       const legacyKey = typeof parsed.apiKey === 'string' ? parsed.apiKey : '';
       return {
         enabled: typeof parsed.enabled === 'boolean' ? parsed.enabled : true,
@@ -316,7 +316,7 @@ export async function saveAISettings(settings: AISettings): Promise<void> {
   if (secretError) throw secretError;
 }
 
-/** Перенос API-ключа AI в SecureStore (запись → проверка → удаление из JSON). */
+/** Move the AI API key to SecureStore (write → verify → remove from JSON). */
 export async function migrateAISecret(): Promise<boolean> {
   const raw = await AsyncStorage.getItem(AI_SETTINGS_KEY);
   if (!raw) return true;
@@ -324,7 +324,7 @@ export async function migrateAISecret(): Promise<boolean> {
   try {
     parsed = JSON.parse(raw) as Partial<AISettings>;
   } catch {
-    // нечитаемый JSON и раньше давал настройки по умолчанию
+    // unreadable JSON yielded the default settings before too
     await AsyncStorage.removeItem(AI_SETTINGS_KEY);
     return true;
   }
@@ -337,7 +337,7 @@ export async function migrateAISecret(): Promise<boolean> {
   return true;
 }
 
-/** Онбординг показывается один раз — флаг «уже видели». */
+/** Onboarding is shown once — the "already seen" flag. */
 export async function loadOnboardingSeen(): Promise<boolean> {
   try {
     return (await AsyncStorage.getItem(ONBOARDING_KEY)) === '1';

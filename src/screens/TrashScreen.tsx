@@ -64,7 +64,7 @@ export default function TrashScreen({ navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      // Повторный фокус: без спиннера, а в пределах TTL — вообще без сети
+      // Re-focus: no spinner, and within the TTL no network request at all
       if (isFresh(lastLoadRef.current)) return;
       load(lastLoadRef.current.at === 0 ? 'initial' : 'silent');
     }, [load]),
@@ -89,7 +89,7 @@ export default function TrashScreen({ navigation }: Props) {
     ]);
   }, [client, workspace, load, dialog, t]);
 
-  // Массовое восстановление: bulk-эндпоинта в API нет — восстанавливаем по одной
+  // Restore all: the API has no bulk endpoint, so restore notes one by one
   const handleRestoreAll = useCallback(() => {
     if (!client || notes.length === 0) return;
     dialog.alert(t('trash.restoreAllTitle'), t('trash.restoreAllMessage'), [

@@ -2,7 +2,7 @@ import { translate } from '../../i18n';
 import { NOTE_REF, resolveNoteOrError } from '../toolHelpers';
 import { PoznoteTool } from './types';
 
-/** Инструменты корзины: просмотр, восстановление, очистка. */
+/** Trash tools: list, restore, empty. */
 export const TRASH_TOOLS: PoznoteTool[] = [
   {
     spec: {

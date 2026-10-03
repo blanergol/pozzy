@@ -63,7 +63,7 @@ function serverNote(id: number, updated: string): NoteListItem {
 
 let profileSeq = 0;
 function freshProfileId(): string {
-  // in-memory кэш offlineStore живёт между тестами — изолируемся уникальным id
+  // the offlineStore in-memory cache survives between tests — isolate with a unique id
   return `test-profile-${++profileSeq}`;
 }
 
@@ -125,7 +125,7 @@ describe('notesRepository (offline)', () => {
     expect(data.pending).toHaveLength(1);
     expect(data.pending[0].type).toBe('create');
 
-    // заметка доступна из кэша для редактора
+    // the note is available from the cache for the editor
     const note = await repoGetNote(makeCtx(makeClient(), profileId, false), id);
     expect(note.heading).toBe('Локальная');
   });
@@ -154,7 +154,7 @@ describe('notesRepository (offline)', () => {
     const all = await repoListNotes(ctx, {});
     expect(all.fromCache).toBe(true);
     expect(all.notes).toHaveLength(2);
-    // сортировка updated_desc
+    // updated_desc sort order
     expect(all.notes[0].id).toBe(1);
 
     const found = await repoListNotes(ctx, { search: 'мол' });
@@ -213,7 +213,7 @@ describe('syncNow (last-write-wins)', () => {
 
     const data = await loadOfflineData(profileId);
     expect(data.pending).toHaveLength(0);
-    // кэш обновлён серверным снимком
+    // the cache has been updated with the server snapshot
     expect(data.notesList[0].updated).toBe('2026-06-01 10:00:00');
   });
 
@@ -225,7 +225,7 @@ describe('syncNow (last-write-wins)', () => {
     });
     const ctx = makeCtx(makeClient(), profileId, false);
     const tempId = await repoCreateNote(ctx, { heading: 'Новая', content: 'текст' });
-    // правка до синхронизации сливается в create
+    // an edit made before sync is merged into the create
     await repoUpdateNote(ctx, tempId, { content: 'текст новее' });
 
     await syncNow(client, profileId);
@@ -236,7 +236,7 @@ describe('syncNow (last-write-wins)', () => {
     const data = await loadOfflineData(profileId);
     expect(data.pending).toHaveLength(0);
     expect(data.aliases[String(tempId)]).toBe(42);
-    // старый временный id продолжает разрешаться (открытый редактор)
+    // the old temporary id still resolves (an open editor)
     const note = await repoGetNote(makeCtx(makeClient(), profileId, false), tempId);
     expect(note.id).toBe(42);
   });

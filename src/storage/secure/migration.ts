@@ -14,11 +14,11 @@ import { cleanupPlaintextTempFiles, sweepLegacyAttachmentFiles } from './encrypt
 import { secrets } from './secrets';
 
 /**
- * Однократная миграция хранилища при старте — до загрузки настроек и до
- * любого синка. Каждый шаг идемпотентен и безопасен к прерыванию: открытый
- * текст удаляется только после проверенной записи нового представления.
- * Флаг версии ставится, только когда все шаги прошли; иначе миграция
- * повторится при следующем запуске.
+ * One-time storage migration at startup — before settings are loaded and before
+ * any sync. Each step is idempotent and safe to interrupt: plaintext is deleted
+ * only after the new representation has been written and verified.
+ * The version flag is set only when all steps succeeded; otherwise the migration
+ * is repeated on the next launch.
  */
 
 export const MIGRATION_KEY = 'pozzy.migration.v1';
@@ -29,11 +29,11 @@ const LEGACY_OFFLINE_PATTERN = /^poznote\.offline\.(.+)\.v1$/;
 const APP_SCOPE_KEYS = [CHAT_HISTORY_KEY, CHAT_SUMMARY_KEY, TEMPLATES_KEY];
 
 /**
- * Чистая установка: маркера нет И в AsyncStorage нет данных приложения.
- * На iOS Keychain переживает удаление приложения — удаляем всё, что записала
- * прошлая установка. Второе условие страхует от потери секретов, если запись
- * маркера когда-то не удалась: при наличии данных это обновление или обычный
- * запуск, и секреты трогать нельзя. Маркер ставится ДО переноса секретов.
+ * Fresh install: no marker AND no app data in AsyncStorage.
+ * On iOS the Keychain survives app uninstall — delete everything the previous
+ * install wrote. The second condition guards against losing secrets if writing
+ * the marker once failed: when data is present this is an update or a regular
+ * launch, and secrets must not be touched. The marker is set BEFORE secrets are moved.
  */
 async function handleFreshInstall(): Promise<void> {
   if ((await AsyncStorage.getItem(INSTALL_MARKER_KEY)) !== null) return;
@@ -52,17 +52,17 @@ async function migrateOfflineCaches(): Promise<boolean> {
   let ok = true;
   const referenced = new Set<string>();
   for (const id of ids) {
-    // Очередь переносится первой и с проверкой (см. offlineStore.convertLegacy)
+    // The queue is moved first and with verification (see offlineStore.convertLegacy)
     if (!(await migrateOfflineProfile(id))) {
       ok = false;
       continue;
     }
-    // Возвращаются только существующие legacy-файлы, которые не удалось
-    // зашифровать; операции с уже пропавшим файлом флаг миграции не блокируют
+    // Only existing legacy files that could not be encrypted are returned;
+    // operations whose file is already gone don't block the migration flag
     for (const uri of await migrateLegacyAttachmentFiles(id)) referenced.add(uri);
   }
   if (referenced.size > 0) ok = false;
-  // Осиротевшие legacy-файлы удаляем, только когда все очереди прочитаны
+  // Orphaned legacy files are deleted only once all queues have been read
   if (ok) await sweepLegacyAttachmentFiles(referenced).catch(() => {});
   return ok;
 }
@@ -71,8 +71,8 @@ async function migrateAppScope(): Promise<boolean> {
   if (encryptedCache.persistent) {
     return encryptedCache.encryptInPlace(APP_SCOPE, APP_SCOPE_KEYS);
   }
-  // Web: история чата живёт в памяти сессии — переносим её туда и удаляем из
-  // localStorage. Шаблоны на web остаются в localStorage (см. durableAppValues).
+  // Web: chat history lives in session memory — move it there and remove it from
+  // localStorage. Templates on web stay in localStorage (see durableAppValues).
   for (const key of [CHAT_HISTORY_KEY, CHAT_SUMMARY_KEY]) {
     const raw = await AsyncStorage.getItem(key);
     if (raw === null) continue;
@@ -99,8 +99,8 @@ async function run(): Promise<void> {
     await migrateLegacySingleServer();
     return true;
   });
-  // Порядок: сначала данные пользователя (очередь несинхронизированных правок),
-  // затем секреты, затем общие данные приложения.
+  // Order: user data first (the queue of unsynced edits),
+  // then secrets, then app-wide data.
   ok = (await step(migrateOfflineCaches)) && ok;
   ok = (await step(migrateServerSecrets)) && ok;
   ok = (await step(migrateAISecret)) && ok;
@@ -111,13 +111,13 @@ async function run(): Promise<void> {
 
 let running: Promise<void> | null = null;
 
-/** Запустить миграцию (повторные вызовы в той же сессии ждут первый). Не бросает. */
+/** Run the migration (repeated calls in the same session wait for the first). Never throws. */
 export function runStartupMigration(): Promise<void> {
   if (!running) running = run().catch(() => {});
   return running;
 }
 
-/** Только для тестов: разрешить повторный запуск в той же сессии. */
+/** Tests only: allow re-running in the same session. */
 export function __resetMigrationForTests(): void {
   running = null;
 }

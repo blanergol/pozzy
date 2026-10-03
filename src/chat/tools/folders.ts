@@ -2,7 +2,7 @@ import { translate } from '../../i18n';
 import { err, resolveFolderId } from '../toolHelpers';
 import { PoznoteTool } from './types';
 
-/** Инструменты папок: создание, переименование, очистка, удаление. */
+/** Folder tools: create, rename, empty, delete. */
 export const FOLDER_TOOLS: PoznoteTool[] = [
   {
     spec: {

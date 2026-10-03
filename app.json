@@ -31,15 +31,15 @@
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "Разрешить Pozzy использовать микрофон для голосового ввода.",
-          "speechRecognitionPermission": "Разрешить Pozzy распознавать речь для голосового ввода."
+          "microphonePermission": "Allow Pozzy to use the microphone for voice input.",
+          "speechRecognitionPermission": "Allow Pozzy to recognize speech for voice input."
         }
       ],
       "./plugins/withReleaseSigning",
       [
         "expo-calendar",
         {
-          "calendarPermission": "Разрешить Pozzy добавлять напоминания в календарь."
+          "calendarPermission": "Allow Pozzy to add reminders to your calendar."
         }
       ],
       [

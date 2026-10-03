@@ -56,7 +56,7 @@ function listItem(id: number, heading: string) {
   };
 }
 
-/** Состояние AsyncStorage предыдущего релиза (1.0.7): всё открытым текстом. */
+/** AsyncStorage state of the previous release (1.0.7): everything in plaintext. */
 async function seedPreviousRelease(): Promise<void> {
   await AsyncStorage.multiSet([
     [
@@ -123,7 +123,7 @@ async function expectFullyMigrated(): Promise<void> {
   expect((await loadChatHistory()).map((m) => m.content)).toEqual(['CHAT-SECRET']);
   expect((await loadChatSummary()).summary).toBe('SUMMARY-SECRET');
   expect((await loadTemplates()).map((t) => t.content)).toEqual(['TPL-SECRET']);
-  // несекретные настройки остаются в AsyncStorage как были
+  // non-secret settings stay in AsyncStorage as they were
   expect(rawAsyncStorage()['poznote.themeMode.v1']).toBe('dark');
 }
 
@@ -178,9 +178,9 @@ describe('startup migration', () => {
       await wipeDevice();
       await seedPreviousRelease();
       crashAfter(k);
-      await runStartupMigration(); // «процесс умирает» на k-й операции
+      await runStartupMigration(); // "the process dies" on the k-th operation
       stopCrashing();
-      // падение действительно прервало миграцию: флаг не поставлен
+      // the crash really did interrupt the migration: the flag is not set
       expect(rawAsyncStorage()[MIGRATION_KEY]).toBeUndefined();
       crashes++;
       restartApp();
@@ -201,7 +201,7 @@ describe('startup migration', () => {
     expect(rawAsyncStorage()[MIGRATION_KEY]).toBeUndefined();
     expect(rawAsyncStorage()['poznote.servers.v1']).toContain('S3CRET-PASS');
     expect(rawAsyncStorage()[`poznote.offline.${P1}.v1`]).toContain('UNSYNCED-EDIT');
-    // приложение при этом работает на legacy-данных
+    // the app meanwhile keeps working on legacy data
     restartApp();
     expect((await loadServers()).servers[0].password).toBe('S3CRET-PASS');
     expect((await loadOfflineData(P1)).pending).toHaveLength(2);
@@ -227,7 +227,7 @@ describe('startup migration', () => {
   it('восстановление из бэкапа без SecureStore: кэш стирается, пароли надо ввести, сообщение о правках', async () => {
     await seedPreviousRelease();
     await runStartupMigration();
-    // Android Auto Backup: AsyncStorage восстановлен, SecureStore исключён из бэкапа
+    // Android Auto Backup: AsyncStorage restored, SecureStore excluded from the backup
     secureStoreMock.__reset();
     restartApp();
     await expect(runStartupMigration()).resolves.toBeUndefined();
@@ -246,7 +246,7 @@ describe('startup migration', () => {
   });
 
   it('чистая установка: остатки pozzy.* в Keychain от прошлой установки удаляются', async () => {
-    // прошлая установка оставила записи в Keychain (iOS не чистит его при удалении)
+    // the previous install left entries in the Keychain (iOS doesn't clear it on uninstall)
     secureStoreMock.__store.set(secretKeys.serverPassword('old'), 'LEFTOVER');
     secureStoreMock.__store.set(secretKeys.serverDataKey('old'), 'LEFTOVER-KEY');
     secureStoreMock.__store.set(

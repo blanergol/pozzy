@@ -26,7 +26,7 @@ import { useConnectivity } from '../context/ConnectivityContext';
 import { PendingOp } from '../storage/offlineStore';
 import { useDialog } from './DialogProvider';
 import { ThemeColors, useTheme, useThemedStyles } from '../theme/ThemeContext';
-import { useI18n } from '../i18n';
+import { useI18n, type TranslationKey } from '../i18n';
 
 interface Props {
   visible: boolean;
@@ -36,11 +36,11 @@ interface Props {
   onClose: () => void;
 }
 
-function formatSize(bytes: number): string {
+function formatSize(bytes: number, t: (key: TranslationKey) => string): string {
   if (!bytes || bytes <= 0) return '';
-  if (bytes < 1024) return `${bytes} Б`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+  if (bytes < 1024) return `${bytes} ${t('attach.sizeB')}`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} ${t('attach.sizeKB')}`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ${t('attach.sizeMB')}`;
 }
 
 function safeFileName(name: string): string {
@@ -96,7 +96,7 @@ export default function AttachmentsModal({ visible, noteId, workspace, client, o
       const asset = result.assets[0];
       const file = { uri: asset.uri, name: asset.name, mimeType: asset.mimeType };
       setIsBusy(true);
-      // Оффлайн — файл копируется локально и уйдёт при синхронизации
+      // Offline: the file is copied locally and will be uploaded on sync
       if (!isOnline && profileId) {
         await queueAttachmentUpload(profileId, noteId, file, workspace ?? undefined);
         await loadPending();
@@ -105,7 +105,7 @@ export default function AttachmentsModal({ visible, noteId, workspace, client, o
       try {
         await client.uploadAttachment(noteId, file, workspace ?? undefined);
       } catch (e) {
-        // сеть пропала в момент загрузки — в очередь
+        // network dropped during upload: queue it
         if (e instanceof Error && e.message === 'network' && profileId) {
           await queueAttachmentUpload(profileId, noteId, file, workspace ?? undefined);
           await loadPending();
@@ -145,8 +145,8 @@ export default function AttachmentsModal({ visible, noteId, workspace, client, o
         workspace ?? undefined,
       );
       const base64 = base64FromBytes(new Uint8Array(data));
-      // Открытая копия нужна системному share sheet. Шифровать её нельзя —
-      // приложение-получатель читает файл как есть; удаляется при следующем старте.
+      // The system share sheet needs a plaintext copy. It cannot be encrypted:
+      // the receiving app reads the file as is; it is deleted on the next startup.
       const fileUri =
         FileSystem.cacheDirectory +
         `${SHARED_ATTACHMENT_PREFIX}${noteId}_${safeFileName(attachment.original_filename)}`;
@@ -226,7 +226,7 @@ export default function AttachmentsModal({ visible, noteId, workspace, client, o
                       {a.original_filename}
                     </Text>
                     <Text style={styles.rowMeta}>
-                      {[a.file_type, formatSize(a.file_size)].filter(Boolean).join(' · ')}
+                      {[a.file_type, formatSize(a.file_size, t)].filter(Boolean).join(' · ')}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => handleDelete(a)} hitSlop={8}>

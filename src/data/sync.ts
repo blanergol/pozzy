@@ -8,7 +8,7 @@ function isNetworkError(e: unknown): boolean {
   return e instanceof Error && e.message === 'network';
 }
 
-/** Серверное время 'YYYY-MM-DD HH:MM:SS' или ISO → ms. Невалидное → 0. */
+/** Server time 'YYYY-MM-DD HH:MM:SS' or ISO → ms. Invalid → 0. */
 function toMs(value: string | null | undefined): number {
   if (!value) return 0;
   const ms = new Date(value.replace(' ', 'T')).getTime();
@@ -22,10 +22,10 @@ export function isSyncing(): boolean {
 }
 
 /**
- * Синхронизация после восстановления связи.
- * Конфликты — last-write-wins по дате: серверная правка новее локальной
- * операции → локальная отбрасывается; иначе локальная уходит на сервер.
- * Возвращает число отправленных операций.
+ * Sync after the connection is restored.
+ * Conflicts are resolved last-write-wins by date: a server edit newer than the local
+ * operation → the local one is discarded; otherwise the local one is pushed to the server.
+ * Returns the number of operations pushed.
  */
 export async function syncNow(
   client: PoznoteClient,
@@ -38,7 +38,7 @@ export async function syncNow(
     const data = await loadOfflineData(profileId);
     let pushed = 0;
 
-    // Серверный список нужен для LWW и сверки избранного
+    // The server list is needed for LWW and for reconciling favorites
     let serverList: NoteListItem[] = [];
     try {
       serverList = await client.listNotes({ sort: 'updated_desc' });
@@ -48,10 +48,10 @@ export async function syncNow(
       throw e;
     }
 
-    // Обрабатываем очередь по порядку; после каждой операции сохраняемся.
-    // Вложения откладываем: им нужны серверные id заметок (create-операции).
-    // Они остаются в очереди (а значит и на диске) — раньше их вынимали из
-    // очереди на время цикла, и падение приложения посреди синка их теряло.
+    // Process the queue in order, saving after each operation.
+    // Attachments are deferred: they need server note ids (from create operations).
+    // They stay in the queue (and therefore on disk) — previously they were pulled out
+    // of the queue for the duration of the loop, and an app crash mid-sync lost them.
     const done = new Set<string>();
     for (;;) {
       const op = data.pending.find((o) => o.type !== 'attachment' && !done.has(o.opId));
@@ -67,7 +67,7 @@ export async function syncNow(
             workspace: op.payload.workspace,
             folder_id: op.payload.folder_id ?? null,
           });
-          // Перепривязка временного id → серверного
+          // Remap the temporary id → server id
           data.aliases[String(id)] = realId;
           const details = data.notesDetails[String(id)];
           if (details) {
@@ -78,12 +78,12 @@ export async function syncNow(
           }
           const item = data.notesList.find((n) => n.id === id);
           if (item) item.id = realId;
-          // в списке серверных заметок появится при финальном refetch
+          // it will appear in the server notes list on the final refetch
         } else if (op.type === 'update') {
           const serverItem = serverList.find((n) => n.id === id);
           const serverTs = toMs(serverItem?.updated);
           if (!serverItem || serverTs <= toMs(op.clientTs)) {
-            // Локальная версия новее (или заметки нет в списке — пушим)
+            // The local version is newer (or the note is not in the list — push)
             await client.updateNote(id, {
               heading: op.payload.heading,
               content: op.payload.content,
@@ -92,10 +92,10 @@ export async function syncNow(
             const details = data.notesDetails[String(id)];
             if (details) delete details.localUpdatedAt;
           }
-          // иначе сервер новее — локальную правку отбрасываем (LWW)
+          // otherwise the server is newer — discard the local edit (LWW)
         } else if (op.type === 'delete') {
           await client.deleteNote(id).catch((e: unknown) => {
-            // заметка уже удалена на сервере — считаем операцию выполненной
+            // the note is already deleted on the server — treat the operation as done
             if (e instanceof Error && 'status' in e && (e as { status: number }).status === 404) return;
             throw e;
           });
@@ -111,18 +111,18 @@ export async function syncNow(
       } catch (e) {
         if (isNetworkError(e)) {
           callbacks.reportNetworkError?.();
-          // связь снова пропала — останавливаемся, очередь сохранена
+          // connection dropped again — stop, the queue is saved
           await saveOfflineData(profileId, data);
           return pushed;
         }
-        // Прочие ошибки (409/423 лок, 500 и т.п.): пропускаем операцию,
-        // чтобы не блокировать очередь навсегда
+        // Other errors (423 lock, 409 conflict, 500, etc.): skip the operation
+        // so it doesn't block the queue forever
       }
       data.pending = data.pending.filter((o) => o.opId !== op.opId);
       await saveOfflineData(profileId, data);
     }
 
-    // Отложенные вложения — после note-операций: временные id уже разрешены
+    // Deferred attachments go after the note operations: temporary ids are resolved by now
     if (data.pending.some((o) => o.type === 'attachment')) {
       const att = await processAttachmentOps(client, profileId, data);
       pushed += att.pushed;
@@ -133,7 +133,7 @@ export async function syncNow(
       if (att.pushed > 0) callbacks.reportSuccess?.();
     }
 
-    // Очередь пуста — подтягиваем свежие снимки с сервера
+    // The queue is empty — pull fresh snapshots from the server
     try {
       const [freshList, folders] = await Promise.all([
         client.listNotes({ sort: 'updated_desc' }),
@@ -141,8 +141,8 @@ export async function syncNow(
       ]);
       data.notesList = freshList;
       data.folders = folders;
-      // детали заметок подтянутся при открытии; очищаем устаревшие кэши,
-      // которых уже нет на сервере
+      // note details are fetched on open; purge stale cache entries
+      // that no longer exist on the server
       const serverIds = new Set(freshList.map((n) => String(n.id)));
       for (const key of Object.keys(data.notesDetails)) {
         const numeric = Number(key);
@@ -151,7 +151,7 @@ export async function syncNow(
       }
       await saveOfflineData(profileId, data);
       callbacks.reportSuccess?.();
-      // кэш изменился — экраны перечитают данные при следующем фокусе
+      // the cache has changed — screens will re-read data on their next focus
       bumpDataVersion();
     } catch (e) {
       if (isNetworkError(e)) callbacks.reportNetworkError?.();

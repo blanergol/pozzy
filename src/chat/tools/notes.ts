@@ -9,7 +9,7 @@ import {
 } from '../toolHelpers';
 import { PoznoteTool } from './types';
 
-/** Базовые инструменты заметок: поиск, чтение, создание, правки, перемещение, удаление. */
+/** Core note tools: search, read, create, edit, move, delete. */
 export const NOTE_TOOLS: PoznoteTool[] = [
   {
     spec: {

@@ -4,16 +4,16 @@ import { encryptedCache, serverCachePrefix } from './secure/encryptedCache';
 import { deletePendingAttachmentFiles } from './secure/encryptedFiles';
 import { recordLostEdits } from './secure/lostData';
 
-/** Заметка в локальном кэше; localUpdatedAt — время последней ЛОКАЛЬНОЙ правки (ISO). */
+/** Note in the local cache; localUpdatedAt is the time of the last LOCAL edit (ISO). */
 export interface CachedNote extends NoteDetails {
   localUpdatedAt?: string;
 }
 
-/** Операция, ожидающая синхронизации с сервером. */
+/** Operation waiting to be synced with the server. */
 export interface PendingOp {
   opId: string;
   type: 'create' | 'update' | 'delete' | 'favorite' | 'attachment';
-  /** id заметки; у оффлайн-созданных — временный отрицательный. */
+  /** Note id; for notes created offline it is a temporary negative one. */
   noteId: number;
   payload: {
     heading?: string;
@@ -21,49 +21,49 @@ export interface PendingOp {
     tags?: string;
     workspace?: string;
     folder_id?: number | null;
-    /** Целевое состояние избранного (для type='favorite'). */
+    /** Target favorite state (for type='favorite'). */
     favorite?: number;
-    /** Отложенная загрузка вложения (type='attachment'): локальная копия файла. */
+    /** Deferred attachment upload (type='attachment'): local copy of the file. */
     localUri?: string;
     fileName?: string;
     mimeType?: string;
   };
-  /** ISO-время локального изменения — основа last-write-wins. */
+  /** ISO time of the local change — the basis for last-write-wins. */
   clientTs: string;
 }
 
 export interface OfflineData {
-  /** Снимок списка заметок (серверный + наложенные локальные правки). */
+  /** Snapshot of the notes list (server + local edits applied on top). */
   notesList: NoteListItem[];
-  /** Полные заметки по id (строка). */
+  /** Full notes by id (string). */
   notesDetails: Record<string, CachedNote>;
   folders: Folder[];
-  /** Очередь несинхронизированных операций. */
+  /** Queue of unsynced operations. */
   pending: PendingOp[];
-  /** Перепривязка временных id → серверные после синхронизации create. */
+  /** Remapping of temporary ids → server ids after a create has been synced. */
   aliases: Record<string, number>;
 }
 
 function emptyData(): OfflineData {
-  // Каждый раз новые массивы/объекты: иначе профили делят общий EMPTY.notesList
+  // Fresh arrays/objects every time: otherwise profiles would share a common EMPTY.notesList
   return { notesList: [], notesDetails: {}, folders: [], pending: [], aliases: {} };
 }
 
 /*
- * Раскладка в хранилище (все значения зашифрованы ключом данных сервера):
- *   pozzy.cache.<id>.queue        — очередь + aliases (только пока очередь не пуста).
- *                                   aliases лежат в той же записи, что и очередь:
- *                                   запись одного ключа атомарна на всех платформах,
- *                                   а multiSet на iOS — нет (сбой между «create ушёл»
- *                                   и «alias записан» иначе терял бы правки)
- *   pozzy.cache.<id>.meta         — список заметок, папки, aliases, маркер конвертации
- *   pozzy.cache.<id>.note.<noteId> — полная заметка
- * При сохранении пишутся только изменившиеся записи, одним multiSet
- * (на Android — одна транзакция), очередь — первой.
+ * Storage layout (all values are encrypted with the server data key):
+ *   pozzy.cache.<id>.queue        — queue + aliases (only while the queue is non-empty).
+ *                                   aliases live in the same entry as the queue:
+ *                                   writing a single key is atomic on all platforms,
+ *                                   while multiSet on iOS is not (a failure between "create
+ *                                   sent" and "alias written" would otherwise lose edits)
+ *   pozzy.cache.<id>.meta         — notes list, folders, aliases, conversion marker
+ *   pozzy.cache.<id>.note.<noteId> — full note
+ * On save only the changed entries are written, in a single multiSet
+ * (one transaction on Android), the queue first.
  *
- * Legacy (до 1.1): один открытый JSON `poznote.offline.<id>.v1`. Он
- * конвертируется при первом чтении; до успешной проверенной записи нового
- * формата legacy-блоб остаётся источником истины и не удаляется.
+ * Legacy (pre-1.1): a single plaintext JSON `poznote.offline.<id>.v1`. It is
+ * converted on first read; until the new format has been written and verified,
+ * the legacy blob remains the source of truth and is not deleted.
  */
 
 export function legacyOfflineKey(profileId: string): string {
@@ -76,25 +76,25 @@ const notePrefix = (profileId: string) => `${serverCachePrefix(profileId)}note.`
 
 interface ProfileState {
   data: OfflineData;
-  /** Ключ хранилища → JSON, записанный последним (база для отслеживания изменений). */
+  /** Storage key → the JSON written last (baseline for change tracking). */
   written: Map<string, string>;
-  /** Legacy-блоб ещё не удалён: следующая запись должна быть полной. */
+  /** The legacy blob has not been deleted yet: the next write must be a full one. */
   legacyPending: boolean;
-  /** Web: opId операций из legacy-блоба, которые ещё не синхронизированы. */
+  /** Web: opIds of operations from the legacy blob that are not yet synced. */
   webLegacyOps?: Set<string>;
-  /** Хранилище не прочиталось: писать нельзя, пока не перечитаем (иначе затрём очередь). */
+  /** Storage could not be read: no writes until we re-read it (otherwise we'd clobber the queue). */
   readFailed?: boolean;
 }
 
-// Маркер «запись есть, содержимое неизвестно» — гарантирует перезапись/удаление
+// Marker for "entry exists, content unknown" — guarantees an overwrite/delete
 const UNKNOWN = '\u0000';
 
-// In-memory кэш поверх хранилища: сериализуем чтение/запись, чтобы
-// конкурентные правки (автосохранение + синхронизация) не теряли данные.
+// In-memory cache over the storage: reads/writes are serialized so that
+// concurrent edits (autosave + sync) don't lose data.
 const cache = new Map<string, ProfileState>();
 const loading = new Map<string, Promise<ProfileState>>();
 const writeChains = new Map<string, Promise<void>>();
-// Удалённые профили: запоздавший синк не должен воссоздать их кэш и ключ данных
+// Removed profiles: a late sync must not recreate their cache and data key
 const clearedProfiles = new Set<string>();
 
 function normalize(parsed: Partial<OfflineData>): OfflineData {
@@ -114,21 +114,21 @@ function queueJson(data: OfflineData): string {
 
 function serializeEntries(profileId: string, data: OfflineData): Map<string, string> {
   const entries = new Map<string, string>();
-  // порядок вставки = порядок записи: очередь первой
+  // insertion order = write order: the queue first
   if (data.pending.length > 0) entries.set(queueKey(profileId), queueJson(data));
   for (const [id, note] of Object.entries(data.notesDetails)) {
     entries.set(notePrefix(profileId) + id, JSON.stringify(note));
   }
   entries.set(
     metaKey(profileId),
-    // converted: запись нового формата сделана после проверенного переноса очереди —
-    // оставшийся legacy-блоб устарел и не должен её перезаписать
+    // converted: the new-format entry was written after a verified queue transfer —
+    // a leftover legacy blob is stale and must not overwrite it
     JSON.stringify({ notesList: data.notesList, folders: data.folders, aliases: data.aliases, converted: true }),
   );
   return entries;
 }
 
-/** Слить данные, прочитанные из хранилища, в данные в памяти (мутирует mem). */
+/** Merge data read from storage into the in-memory data (mutates mem). */
 function mergeStored(mem: OfflineData, stored: OfflineData): void {
   const memOps = new Set(mem.pending.map((op) => op.opId));
   mem.pending = [...stored.pending.filter((op) => !memOps.has(op.opId)), ...mem.pending];
@@ -138,12 +138,12 @@ function mergeStored(mem: OfflineData, stored: OfflineData): void {
   if (mem.folders.length === 0) mem.folders = stored.folders;
 }
 
-/** Записать изменившиеся записи. Ошибка — исключение; written обновляется только по успеху. */
+/** Write the changed entries. Failure throws; written is updated only on success. */
 async function persist(profileId: string, state: ProfileState): Promise<void> {
   if (clearedProfiles.has(profileId)) return;
   if (state.readFailed) {
-    // При загрузке хранилище не прочиталось. Писать поверх нельзя — затрём
-    // сохранённую очередь; сначала перечитываем и сливаем с правками в памяти.
+    // Storage could not be read on load. We must not write over it — that would clobber
+    // the saved queue; re-read it first and merge with the in-memory edits.
     const fresh = await readProfile(profileId);
     mergeStored(state.data, fresh.data);
     state.written = fresh.written;
@@ -159,9 +159,9 @@ async function persist(profileId: string, state: ProfileState): Promise<void> {
   }
   const removed = [...state.written.keys()].filter((key) => !entries.has(key));
   const qKey = queueKey(profileId);
-  // Опустевшую очередь сначала перезаписываем "[]" в той же транзакции, что и
-  // остальное (aliases и т.п.), и только потом удаляем: иначе сбой между
-  // записью и удалением воскресил бы уже отправленные операции (дубли create).
+  // An emptied queue is first overwritten with "[]" in the same transaction as
+  // the rest (aliases etc.), and only then deleted: otherwise a failure between
+  // the write and the delete would resurrect already-sent operations (duplicate creates).
   if (removed.includes(qKey)) changed.unshift([qKey, queueJson(state.data)]);
   if (changed.length > 0) {
     await encryptedCache.setMany(profileId, changed);
@@ -172,7 +172,7 @@ async function persist(profileId: string, state: ProfileState): Promise<void> {
     for (const key of removed) state.written.delete(key);
   }
   if (state.legacyPending && !state.webLegacyOps) {
-    // Legacy-блоб удаляем только после проверки обратным чтением
+    // The legacy blob is deleted only after a read-back verification
     const { values } = await encryptedCache.getMany(profileId, [...entries.keys()]);
     for (const [key, json] of entries) {
       if (values.get(key) !== json) throw new Error('verification failed');
@@ -183,10 +183,10 @@ async function persist(profileId: string, state: ProfileState): Promise<void> {
 }
 
 /**
- * Web: кэш живёт в памяти, поэтому несинхронизированные правки прошлой версии
- * нельзя сразу удалить из localStorage — перезагрузка страницы их бы потеряла.
- * Держим в legacy-ключе только ещё не отправленные legacy-операции и удаляем
- * его, как только они уйдут на сервер.
+ * Web: the cache lives in memory, so unsynced edits from the previous version
+ * can't be removed from localStorage right away — a page reload would lose them.
+ * The legacy key keeps only the legacy operations not yet sent, and is removed
+ * as soon as they reach the server.
  */
 async function drainWebLegacy(profileId: string, state: ProfileState): Promise<void> {
   const legacyOps = state.webLegacyOps as Set<string>;
@@ -217,17 +217,17 @@ async function readLegacy(profileId: string): Promise<OfflineData | null | 'corr
   }
 }
 
-/** Все записи нового формата сервера, помеченные как «неизвестные». */
+/** All new-format entries of the server, marked as "unknown". */
 async function existingEntries(profileId: string): Promise<Map<string, string>> {
   const keys = await encryptedCache.keysWithPrefix(serverCachePrefix(profileId));
   return new Map(keys.map((key) => [key, UNKNOWN]));
 }
 
-/** Конвертация legacy-блоба: очередь первой и с проверкой, затем остальное. */
+/** Legacy blob conversion: the queue first and verified, then the rest. */
 async function convertLegacy(profileId: string, data: OfflineData): Promise<ProfileState> {
   const state: ProfileState = { data, written: new Map(), legacyPending: true };
   if (!encryptedCache.persistent) {
-    // web: переносим в память сессии, legacy-правки дренируются по мере синка
+    // web: move into session memory; legacy edits are drained as they sync
     state.webLegacyOps = new Set(data.pending.map((op) => op.opId));
     await persist(profileId, state).catch(() => {});
     return state;
@@ -243,18 +243,18 @@ async function convertLegacy(profileId: string, data: OfflineData): Promise<Prof
       }
       state.written.set(qKey, queue);
     }
-    // Остальное: запись → проверка обратным чтением → удаление legacy (в persist)
+    // The rest: write → read-back verification → legacy removal (in persist)
     await persist(profileId, state);
   } catch {
-    // Шифрованное хранилище недоступно: работаем с legacy-данными в памяти,
-    // legacy-блоб остаётся на диске до первой успешной полной записи.
+    // Encrypted storage is unavailable: work with the legacy data in memory;
+    // the legacy blob stays on disk until the first successful full write.
     state.legacyPending = true;
     state.written = await existingEntries(profileId).catch(() => new Map());
   }
   return state;
 }
 
-/** Есть ли читаемая meta нового формата, записанная после конвертации. */
+/** Whether there is a readable new-format meta written after conversion. */
 async function isConverted(profileId: string): Promise<boolean> {
   if (!encryptedCache.persistent) return false;
   const { values } = await encryptedCache.getMany(profileId, [metaKey(profileId)]);
@@ -271,16 +271,16 @@ async function readProfile(profileId: string): Promise<ProfileState> {
   try {
     const legacy = await readLegacy(profileId);
     if (legacy === 'corrupt') {
-      // нечитаемый legacy-JSON и раньше заменялся пустыми данными
+      // unreadable legacy JSON was replaced with empty data before too
       await AsyncStorage.removeItem(legacyOfflineKey(profileId)).catch(() => {});
     } else if (legacy) {
       if (!(await isConverted(profileId))) return await convertLegacy(profileId, legacy);
-      // Сбой между проверенной записью нового формата и удалением legacy:
-      // новый формат актуальнее (в нём могли быть правки после конвертации)
+      // Failure between the verified new-format write and the legacy removal:
+      // the new format is more current (it may contain edits made after conversion)
       if (encryptedCache.persistent) await AsyncStorage.removeItem(legacyOfflineKey(profileId));
     }
   } catch {
-    // AsyncStorage недоступен — пробуем новый формат
+    // AsyncStorage is unavailable — try the new format
   }
 
   const keys = await encryptedCache.keysWithPrefix(serverCachePrefix(profileId));
@@ -312,15 +312,15 @@ async function readProfile(profileId: string): Promise<ProfileState> {
     }
   }
 
-  // aliases из записи очереди новее или равны тем, что в meta
+  // aliases from the queue entry are newer than or equal to those in meta
   data.aliases = { ...metaAliases, ...queueAliases };
 
   if (queueLost) await recordLostEdits(profileId).catch(() => {});
   if (unreadable.length > 0) {
-    // Ключ данных потерян (восстановление из бэкапа, другое устройство) или
-    // записи повреждены: кэш считаем утраченным и перезагружаем с сервера.
-    // Читаемую очередь (и aliases для её временных id) сохраняем — операции
-    // самодостаточны и уйдут на сервер при синке.
+    // The data key is lost (restore from backup, another device) or the entries
+    // are corrupted: treat the cache as lost and reload it from the server.
+    // A readable queue (and the aliases for its temporary ids) is kept — the
+    // operations are self-contained and will reach the server on sync.
     const qKey = queueKey(profileId);
     const keepQueue = !queueLost && data.pending.length > 0;
     const rest = [...written.keys()].filter((key) => !(keepQueue && key === qKey));
@@ -369,16 +369,16 @@ export async function saveOfflineData(profileId: string, data: OfflineData): Pro
   const state = await getState(profileId);
   state.data = data;
   const prev = writeChains.get(profileId) ?? Promise.resolve();
-  // Ошибка записи не теряет данные: они в памяти, written не обновлён —
-  // следующее сохранение повторит запись изменившихся записей.
+  // A write failure loses no data: it is in memory and written is not updated —
+  // the next save will retry writing the changed entries.
   const next = prev.then(() => persist(profileId, state).catch(() => {}));
   writeChains.set(profileId, next);
   return next;
 }
 
 /**
- * Как saveOfflineData, но ошибка записи пробрасывается. Нужна там, где за
- * записью следует необратимый шаг (удаление исходного файла при миграции).
+ * Like saveOfflineData, but a write failure is rethrown. Needed where the write
+ * is followed by an irreversible step (deleting the source file during migration).
  */
 export async function saveOfflineDataStrict(profileId: string, data: OfflineData): Promise<void> {
   const state = await getState(profileId);
@@ -390,7 +390,7 @@ export async function saveOfflineDataStrict(profileId: string, data: OfflineData
   if (state.legacyPending && !state.webLegacyOps) throw new Error('legacy data not converted');
 }
 
-/** Удобный mutate: загрузить, применить мутацию, сохранить. */
+/** Convenience mutate: load, apply the mutation, save. */
 export async function updateOfflineData(
   profileId: string,
   mutate: (data: OfflineData) => void,
@@ -402,8 +402,8 @@ export async function updateOfflineData(
 }
 
 /**
- * Миграция кэша профиля при старте. true = legacy-открытого текста больше нет
- * (или не было); false = конвертация не удалась, повторим при следующем запуске.
+ * Profile cache migration at startup. true = no legacy plaintext is left
+ * (or there never was any); false = conversion failed, retry on the next launch.
  */
 export async function migrateOfflineProfile(profileId: string): Promise<boolean> {
   const state = await getState(profileId);
@@ -411,8 +411,8 @@ export async function migrateOfflineProfile(profileId: string): Promise<boolean>
 }
 
 /**
- * Полный сброс локальных данных профиля (например при удалении сервера):
- * кэш, очередь, ключ данных, файлы ожидающих вложений, legacy-блоб.
+ * Full reset of a profile's local data (e.g. when a server is removed):
+ * cache, queue, data key, pending attachment files, legacy blob.
  */
 export async function clearOfflineData(profileId: string): Promise<void> {
   const state = cache.get(profileId);
@@ -431,7 +431,7 @@ export async function clearOfflineData(profileId: string): Promise<void> {
   await next;
 }
 
-/** Разрешить временный id в серверный, если синхронизация уже прошла. */
+/** Resolve a temporary id to the server id if sync has already happened. */
 export function resolveNoteId(data: OfflineData, id: number): number {
   let current = id;
   const seen = new Set<number>();
@@ -446,7 +446,7 @@ export function makeOpId(): string {
   return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
 }
 
-/** Только для тестов: забыть in-memory состояние (эмуляция перезапуска). */
+/** Tests only: forget the in-memory state (simulates an app restart). */
 export function __resetOfflineMemoryForTests(): void {
   cache.clear();
   loading.clear();

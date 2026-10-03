@@ -21,7 +21,7 @@ describe('callChatCompletion', () => {
     mockFetch({ choices: [{ message: { content: 'привет' } }] });
     const reply = await callChatCompletion(settings, [{ role: 'user', content: 'hi' }]);
     expect(reply).toEqual({ content: 'привет', toolCalls: [] });
-    // baseUrl нормализуется (без trailing slash)
+    // baseUrl is normalized (no trailing slash)
     expect(global.fetch).toHaveBeenCalledWith(
       'http://mock/v1/chat/completions',
       expect.objectContaining({ method: 'POST' }),

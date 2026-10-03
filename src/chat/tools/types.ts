@@ -2,12 +2,12 @@ import { PoznoteClient } from '../../api/client';
 import { ChatToolSpec } from '../../api/chat';
 import { ToolArgs } from '../toolHelpers';
 
-/** Инструмент агента: спецификация для модели + исполнитель поверх Poznote API. */
+/** Agent tool: a spec for the model + an executor on top of the Poznote API. */
 export interface PoznoteTool {
   spec: ChatToolSpec;
-  /** true — перед выполнением требуется подтверждение пользователя. */
+  /** true — user confirmation is required before execution. */
   requiresApproval?: boolean;
-  /** Текст для карточки подтверждения (вызывается до run). */
+  /** Text for the confirmation card (called before run). */
   approvalPreview?: (client: PoznoteClient, args: ToolArgs) => Promise<string>;
   run: (client: PoznoteClient, args: ToolArgs) => Promise<string>;
 }

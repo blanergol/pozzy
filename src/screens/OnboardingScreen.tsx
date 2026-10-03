@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useI18n } from '../i18n';
 
-// Фирменная палитра (как в иконке приложения) — онбординг не зависит от темы
+// Brand palette (same as the app icon): onboarding does not depend on the theme
 const BRAND_DARK = '#0A4A42';
 const BRAND_LIGHT = '#12806F';
 const BRAND_YELLOW = '#FFC23D';
@@ -78,8 +78,8 @@ export default function OnboardingScreen({ onFinish }: { onFinish: () => void })
   const insets = useSafeAreaInsets();
   const [page, setPage] = useState(0);
   const listRef = useRef<FlatList<SlideData>>(null);
-  // Высота слайда = окно минус инсеты и панель точек (иначе на web
-  // flex-растяжение не срабатывает и контент прижимается к верху)
+  // Slide height = window minus insets and the dots bar (otherwise on web
+  // flex stretching doesn't kick in and the content hugs the top)
   const slideHeight = height - insets.top - insets.bottom - 16 - 40;
 
   const slides: SlideData[] = [
@@ -140,7 +140,7 @@ export default function OnboardingScreen({ onFinish }: { onFinish: () => void })
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + 16 }]}>
-      {/* декоративные круги — имитация градиента фирменной палитры */}
+      {/* decorative circles: imitate a gradient of the brand palette */}
       <View style={styles.bgCircleTop} />
       <View style={styles.bgCircleBottom} />
 
@@ -270,9 +270,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 48,
     paddingVertical: 14,
   },
-  // minWidth + центрирование у текста: на Android синтетический жирный
-  // (fontWeight 800) рисует последнюю букву за пределами измеренной ширины —
-  // у текста должен быть запас ширины, иначе «Начать» обрезается до «Начат»
+  // minWidth + centering on the text: on Android the synthetic bold
+  // (fontWeight 800) draws the last letter outside the measured width, so
+  // the text needs some spare width, otherwise the Russian "Start" label loses its last letter
   startButtonText: {
     color: BRAND_DARK,
     fontSize: 17,

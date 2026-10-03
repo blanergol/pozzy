@@ -1,19 +1,19 @@
-# Релиз: сборка подписанного APK и публикация в GitHub Releases.
+# Release: build a signed APK and publish it to GitHub Releases.
 #
-# Триггер — тег v* (например: git tag v1.0.1 && git push origin v1.0.1)
-# или ручной запуск (workflow_dispatch).
-# Перед сборкой прогоняются typecheck + unit-тесты.
+# Trigger — a v* tag (for example: git tag v1.0.1 && git push origin v1.0.1)
+# or a manual run (workflow_dispatch).
+# Typecheck + unit tests run before the build.
 #
-# Требуются секреты репозитория (Settings → Secrets and variables → Actions):
-#   RELEASE_KEYSTORE_BASE64   — keystore целиком: `base64 -w0 release.keystore`
-#   RELEASE_KEYSTORE_PASSWORD — пароль хранилища
-#   RELEASE_KEY_ALIAS         — алиас ключа
-#   RELEASE_KEY_PASSWORD      — пароль ключа
-# Если секретов нет, release собирается debug-подписью (см. plugins/withReleaseSigning.js).
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   RELEASE_KEYSTORE_BASE64   — the whole keystore: `base64 -w0 release.keystore`
+#   RELEASE_KEYSTORE_PASSWORD — keystore password
+#   RELEASE_KEY_ALIAS         — key alias
+#   RELEASE_KEY_PASSWORD      — key password
+# Without the secrets the release is built with the debug signature (see plugins/withReleaseSigning.js).
 name: Release APK
 
 permissions:
-  contents: write  # публикация в GitHub Releases
+  contents: write  # publishing to GitHub Releases
 
 on:
   push:
@@ -61,13 +61,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # android/ в .gitignore (managed workflow) — генерируем нативный проект;
-      # плагин plugins/withReleaseSigning подставит release-подпись в build.gradle
+      # android/ is in .gitignore (managed workflow) — generate the native project;
+      # the plugins/withReleaseSigning plugin injects the release signing config into build.gradle
       - name: Prebuild native project
         run: npx expo prebuild --platform android --clean --no-install
 
-      # Если секрет не задан — переменная не выставляется,
-      # и build.gradle использует debug-подпись.
+      # If the secret is not set, the variable is not exported
+      # and build.gradle falls back to the debug signature.
       - name: Prepare signing keystore
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}

@@ -11,7 +11,7 @@ const noteReminderId = (noteId: number) => `note-reminder-${noteId}`;
 
 let permissionAsked = false;
 
-/** Одноразовая инициализация: handler показа, Android-канал, обработка тапов. */
+/** One-time initialization: display handler, Android channel, tap handling. */
 export function initNotifications(): void {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -48,7 +48,7 @@ async function ensurePermission(): Promise<boolean> {
   }
 }
 
-/** Поставить/переставить локальное уведомление о напоминании заметки. */
+/** Schedule/reschedule the local notification for a note reminder. */
 export async function scheduleNoteReminder(
   noteId: number,
   heading: string,
@@ -75,10 +75,10 @@ export async function cancelNoteReminder(noteId: number): Promise<void> {
 }
 
 /**
- * Перепланировать все напоминания из локального кэша (вызывается после синка).
- * Сервер отдаёт только сработавшие уведомления, поэтому источник истины для
- * будущих — reminder_at в кэшированных заметках; уведомления, которых больше
- * нет в кэше (или они в прошлом), снимаем.
+ * Reschedule all reminders from the local cache (called after a sync).
+ * The server only returns notifications that have already fired, so the source
+ * of truth for future ones is reminder_at in the cached notes; notifications no
+ * longer present in the cache (or already in the past) are cancelled.
  */
 export async function syncScheduledReminders(profileId: string): Promise<void> {
   if (!(await ensurePermission())) return;
@@ -104,9 +104,9 @@ export async function syncScheduledReminders(profileId: string): Promise<void> {
 }
 
 /**
- * Ежедневный дайджест на 9:00: напоминания сегодня (из кэша) + непрочитанные.
- * Перепланируется при каждом синке, чтобы числа были свежими. Если сегодня
- * ничего нет — дайджест не ставим.
+ * Daily digest at 9:00: today's reminders (from the cache) + unread ones.
+ * Rescheduled on every sync so the numbers stay fresh. If there is nothing
+ * for today, the digest is not scheduled.
  */
 export async function scheduleDailyDigest(profileId: string, unreadCount: number): Promise<void> {
   await Notifications.cancelScheduledNotificationAsync(DIGEST_ID).catch(() => {});

@@ -2,9 +2,9 @@ import { durableAppValues } from './secure/durableAppValues';
 import { dateLocale, Locale, TranslationKey } from '../i18n';
 
 /**
- * Шаблон заметки. builtin-шаблоны живут в коде, пользовательские — в
- * зашифрованном кэше приложения (это текст пользователя); на web — в
- * localStorage, см. durableAppValues.
+ * Note template. Builtin templates live in code, user templates in the app's
+ * encrypted cache (it is user text); on web, in localStorage,
+ * see durableAppValues.
  */
 export interface NoteTemplate {
   id: string;
@@ -23,7 +23,7 @@ function makeId(): string {
 
 type TFunction = (key: TranslationKey) => string;
 
-/** Встроенные шаблоны; имена и содержимое локализованы через i18n. */
+/** Builtin templates; names and content are localized via i18n. */
 export function getBuiltinTemplates(t: TFunction): NoteTemplate[] {
   return [
     {
@@ -53,7 +53,7 @@ export function getBuiltinTemplates(t: TFunction): NoteTemplate[] {
   ];
 }
 
-/** Подстановка плейсхолдеров {date}, {time}, {datetime} в заголовке и тексте. */
+/** Substitute the {date}, {time}, {datetime} placeholders in the heading and text. */
 export function applyPlaceholders(text: string, locale: Locale): string {
   const loc = dateLocale(locale);
   const now = new Date();
@@ -63,7 +63,7 @@ export function applyPlaceholders(text: string, locale: Locale): string {
     .replace(/\{time\}/g, now.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' }));
 }
 
-// ===== Пользовательские шаблоны =====
+// ===== User templates =====
 
 export async function loadTemplates(): Promise<NoteTemplate[]> {
   try {
@@ -79,7 +79,7 @@ export async function loadTemplates(): Promise<NoteTemplate[]> {
   }
 }
 
-/** Создать или обновить (по id) пользовательский шаблон. */
+/** Create or update (by id) a user template. */
 export async function saveTemplate(
   template: Omit<NoteTemplate, 'id' | 'builtin'> & { id?: string },
 ): Promise<NoteTemplate> {

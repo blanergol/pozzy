@@ -1,5 +1,5 @@
-// In-memory мок expo-secure-store для jest. Проверяет формат ключа как
-// настоящий модуль и позволяет эмулировать сбои для тестов миграции.
+// In-memory mock of expo-secure-store for jest. Validates the key format like
+// the real module and allows simulating failures for migration tests.
 const store = new Map();
 const calls = [];
 let failures = { get: 0, set: 0, delete: 0 };
@@ -51,7 +51,7 @@ module.exports = {
     maybeFail('delete');
     store.delete(key);
   },
-  // --- тестовые хелперы ---
+  // --- test helpers ---
   __store: store,
   __calls: calls,
   __reset() {
@@ -61,7 +61,7 @@ module.exports = {
     corruptReads = false;
     interceptor = null;
   },
-  /** Вызывается перед каждой операцией; может бросить (эмуляция падения процесса). */
+  /** Called before every operation; may throw (simulates a process crash). */
   __setInterceptor(fn) {
     interceptor = fn;
   },

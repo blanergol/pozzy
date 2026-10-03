@@ -33,8 +33,8 @@ import NotificationsScreen from './src/screens/NotificationsScreen';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-// NotesListScreen используется и как вкладка (Notes), и как стек-экран
-// открытой папки (FolderNotes) — параметры маршрутов совпадают.
+// NotesListScreen is used both as a tab (Notes) and as the stack screen of an
+// opened folder (FolderNotes) — the route params are identical.
 const FolderNotesComponent = NotesListScreen as unknown as React.ComponentType<
   import('@react-navigation/native-stack').NativeStackScreenProps<RootStackParamList, 'FolderNotes'>
 >;
@@ -110,7 +110,7 @@ function RootNavigator() {
 
   return (
     <Stack.Navigator
-      // Первый экран — настройки, если ни один сервер ещё не настроен
+      // Start on Settings if no server has been configured yet
       initialRouteName={activeProfile ? 'Tabs' : 'Settings'}
       screenOptions={{
         headerTintColor: colors.accent,
@@ -140,14 +140,14 @@ function RootNavigator() {
 function ThemedNavigation() {
   const { colors, isDark } = useTheme();
 
-  // Фон системного окна — именно он виден под экранами во время анимации
-  // переходов (react-native-screens). Без этого при тёмной теме между
-  // экранами мелькает белый.
+  // System window background — this is what shows beneath screens during transition
+  // animations (react-native-screens). Without it, white flashes between screens
+  // in the dark theme.
   useEffect(() => {
     SystemUI.setBackgroundColorAsync(colors.bg).catch(() => {});
   }, [colors.bg]);
 
-  // Локальные уведомления: handler показа, Android-канал, тап → заметка
+  // Local notifications: display handler, Android channel, tap → note
   useEffect(() => {
     initNotifications();
   }, []);
@@ -193,7 +193,7 @@ function Root() {
     );
   }
 
-  // Онбординг — один раз при первом запуске, до настроек сервера
+  // Onboarding — shown once on first launch, before server settings
   if (!onboardingSeen) {
     return (
       <>

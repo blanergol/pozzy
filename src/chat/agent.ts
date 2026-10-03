@@ -4,11 +4,11 @@ import { AISettings } from '../storage/settings';
 import { POZNOTE_TOOLS } from './tools';
 
 const MAX_STEPS = 8;
-/** guardrails: общий лимит вызовов инструментов за один запрос */
+/** guardrails: total limit on tool calls per request */
 const MAX_TOOL_CALLS = 25;
-/** guardrails: повтор одного и того же вызова подряд — модель зациклилась */
+/** guardrails: the same call repeated back-to-back — the model is stuck in a loop */
 const MAX_IDENTICAL_CALLS = 3;
-/** guardrails: обрезка слишком больших результатов инструментов (защита контекста) */
+/** guardrails: truncation of oversized tool results (context protection) */
 const TOOL_RESULT_MAX_CHARS = 8000;
 
 const SYSTEM_PROMPT = [
@@ -25,14 +25,14 @@ const SYSTEM_PROMPT = [
 
 export interface ApprovalRequest {
   toolName: string;
-  /** Готовый локализованный текст для карточки подтверждения. */
+  /** Ready-to-show localized text for the confirmation card. */
   preview: string;
 }
 
 export interface AgentCallbacks {
-  /** Вызывается перед выполнением каждого инструмента (для индикатора в UI). */
+  /** Called before each tool is executed (for the UI indicator). */
   onTool?: (toolName: string) => void;
-  /** Должен вернуть true, если пользователь разрешил действие. */
+  /** Must return true if the user approved the action. */
   requestApproval?: (req: ApprovalRequest) => Promise<boolean>;
 }
 
@@ -45,8 +45,8 @@ function toWireToolCalls(toolCalls: { id: string; name: string; arguments: strin
 }
 
 /**
- * Агентский цикл: модель ↔ инструменты Poznote, максимум MAX_STEPS шагов.
- * Возвращает финальный текстовый ответ ассистента.
+ * Agent loop: model ↔ Poznote tools, at most MAX_STEPS steps.
+ * Returns the assistant's final text reply.
  */
 export async function runAgent(
   settings: AISettings,
@@ -83,7 +83,7 @@ export async function runAgent(
     });
 
     for (const call of reply.toolCalls) {
-      // guardrail: общий бюджет вызовов на запрос
+      // guardrail: total call budget per request
       toolCallCount += 1;
       if (toolCallCount > MAX_TOOL_CALLS) {
         messages.push({
@@ -95,7 +95,7 @@ export async function runAgent(
         break;
       }
 
-      // guardrail: детект зацикливания — один и тот же вызов подряд
+      // guardrail: loop detection — the same call repeated back-to-back
       const signature = `${call.name}:${call.arguments}`;
       identicalCallStreak = signature === lastCallSignature ? identicalCallStreak + 1 : 1;
       lastCallSignature = signature;
@@ -127,7 +127,7 @@ export async function runAgent(
           try {
             preview = (await tool.approvalPreview?.(client, args)) ?? call.name;
           } catch {
-            // превью не критично
+            // the preview is not critical
           }
           const approved = callbacks.requestApproval
             ? await callbacks.requestApproval({ toolName: call.name, preview })
@@ -147,7 +147,7 @@ export async function runAgent(
         }
       }
 
-      // guardrail: защита контекста от гигантских результатов
+      // guardrail: protect the context from huge results
       let finalResult = result ?? '';
       if (finalResult.length > TOOL_RESULT_MAX_CHARS) {
         finalResult = `${finalResult.slice(0, TOOL_RESULT_MAX_CHARS)}\n… [truncated, ${finalResult.length} chars total]`;
@@ -156,7 +156,7 @@ export async function runAgent(
     }
   }
 
-  // Лимит шагов или пустой ответ: финальный вызов без инструментов
+  // Step limit reached or empty reply: final call without tools
   const final = await callChatCompletion(settings, messages);
   return final.content ?? '';
 }

@@ -6,7 +6,7 @@
 [![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android%20%7C%20Web-blue.svg)](#getting-started)
 [![Expo SDK 57](https://img.shields.io/badge/Expo%20SDK-57-000020.svg?logo=expo)](https://expo.dev)
 [![React Native 0.86](https://img.shields.io/badge/React%20Native-0.86-61dafb.svg?logo=react)](https://reactnative.dev)
-[![API coverage: 100 endpoints](https://img.shields.io/badge/API%20coverage-100%20endpoints-green.svg)](docs/API-COVERAGE.md)
+[![API coverage: 103 endpoints](https://img.shields.io/badge/API%20coverage-103%20endpoints-green.svg)](docs/API-COVERAGE.md)
 
 Pozzy talks to your own Poznote server over its REST API (HTTP Basic Auth + `X-User-ID`) — no cloud, no third parties, your notes stay on your hardware. Built with React Native + Expo (Node.js toolchain), so development and testing run entirely on Windows.
 
@@ -108,7 +108,7 @@ Pozzy talks to your own Poznote server over its REST API (HTTP Basic Auth + `X-U
 - Backups: list, create, delete
 - Active public share links
 
-**API coverage:** 100 client calls, all verified against the Poznote OpenAPI spec — see [docs/API-COVERAGE.md](docs/API-COVERAGE.md) (including a list of spec ↔ server discrepancies found along the way).
+**API coverage:** 103 of the 156 operations in the current Poznote OpenAPI spec (119 paths) are implemented in the client, each verified against the spec by path and method — see [docs/API-COVERAGE.md](docs/API-COVERAGE.md). The spec ↔ server discrepancies found while building the client were fixed upstream in Poznote 6.101.0; the document keeps their history and current status.
 
 ## Security
 
@@ -210,7 +210,7 @@ The E2E suite (`scripts/e2e.js`) drives the real app in a browser via Playwright
 App.tsx                              — navigation (root stack + bottom tabs: Notes / Folders / AI Chat), app entry
 src/theme/ThemeContext.tsx           — light/dark palettes, system theme
 src/i18n/                            — ru/en dictionaries + provider (system locale, persisted)
-src/api/client.ts                    — Poznote HTTP client (Basic Auth + X-User-ID), 100 API calls
+src/api/client.ts                    — Poznote HTTP client (Basic Auth + X-User-ID), 104 API calls
 src/api/chat.ts                      — OpenAI-compatible chat client (/chat/completions + function calling)
 src/chat/agent.ts                    — agent loop (model ↔ tools, step limit, approval)
 src/chat/tools/                      — Poznote tools for the AI chat (search/read/create/update/move/delete)
@@ -241,8 +241,8 @@ src/screens/NotificationsScreen.tsx  — notifications (reminders)
 plugins/withReleaseSigning.js        — Expo config plugin: release APK signing from CI secrets
 scripts/mock-server.js               — stateful Poznote API mock (port 8901)
 scripts/e2e.js                       — Playwright E2E suite
-docs/openapi.yaml                    — vendored Poznote OpenAPI spec
-docs/API-COVERAGE.md                 — API coverage checklist + spec/server discrepancies
+docs/openapi.yaml                    — vendored Poznote OpenAPI spec (synced from Poznote 6.107.2-beta)
+docs/API-COVERAGE.md                 — per-endpoint API coverage checklist + history of spec/server discrepancies
 docs/CI-RELEASE.md                   — CI/CD: tests on push/PR, signed APK release on v* tags
 docs/SECURITY-TESTING.md             — manual checklist: secure storage, encryption, upgrade and backups
 ```
@@ -251,15 +251,15 @@ docs/SECURITY-TESTING.md             — manual checklist: secure storage, encry
 
 **Self-signed / internal CA certificates.** If your server uses HTTPS with a private CA, that CA must be trusted by the phone, or requests will fail. In a browser, opening the server URL once and accepting the certificate is enough.
 
-**CORS (web builds only).** Poznote's preflight response does not include `X-User-ID` in `Access-Control-Allow-Headers` (upstream bug, `src/api/v1/index.php`). Browsers therefore block data endpoints; native apps are unaffected. The one-line fix on the server:
+**CORS (web builds only, Poznote older than 6.101.0).** Earlier Poznote versions did not include `X-User-ID` in `Access-Control-Allow-Headers` of the preflight response, so browsers blocked data endpoints (native apps were unaffected). Poznote 6.101.0 fixed this upstream. On an older server, the one-line fix is:
 
 ```bash
 docker exec <poznote-container> sed -i "s|Access-Control-Allow-Headers: Content-Type, Authorization|Access-Control-Allow-Headers: Content-Type, Authorization, X-User-ID|" /var/www/html/api/v1/index.php
 ```
 
-## Known spec discrepancies
+## Spec discrepancies (resolved upstream)
 
-While building the client we found several places where Poznote's OpenAPI spec differs from the actual server responses (field names, status codes, CORS headers). The client follows the real server behavior; all findings are documented in [docs/API-COVERAGE.md](docs/API-COVERAGE.md) and are good candidates for upstream fixes.
+While building the client we found several places where Poznote's OpenAPI spec differed from the actual server responses (field names, status codes, CORS headers), so the client follows the real server behavior. Poznote 6.101.0 fixed all of them upstream; the history and the current status of each item are kept in [docs/API-COVERAGE.md](docs/API-COVERAGE.md).
 
 ## Contributing
 

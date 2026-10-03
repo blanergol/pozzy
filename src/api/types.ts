@@ -1,7 +1,7 @@
-// Типы отражают РЕАЛЬНЫЕ ответы сервера (src/api/v1/controllers/*.php),
-// которые местами расходятся с docs/openapi.yaml — расхождения отмечены в docs/API-COVERAGE.md.
+// These types reflect the ACTUAL server responses (src/api/v1/controllers/*.php),
+// which in places diverge from docs/openapi.yaml — the discrepancies are noted in docs/API-COVERAGE.md.
 
-/** Элемент списка заметок: GET /notes (содержимого в списке нет). */
+/** Note list item: GET /notes (the list carries no content). */
 export interface NoteListItem {
   id: number;
   heading: string;
@@ -19,7 +19,10 @@ export interface NoteListItem {
   color_hex: string | null;
 }
 
-/** Полная заметка: GET /notes/{id} (поле content, а не entrycontent; favorite отсутствует). */
+/**
+ * Full note: GET /notes/{id}. The body is in `content` (never `entrycontent`);
+ * `favorite` (0/1) is returned by Poznote 6.101.0+ and is absent on older servers.
+ */
 export interface NoteDetails {
   id: number;
   heading: string;
@@ -28,6 +31,7 @@ export interface NoteDetails {
   tags: string | null;
   folder: string | null;
   folder_id: number | null;
+  favorite?: number;
   linked_note_id: number | null;
   icon: string | null;
   icon_color: string | null;
@@ -180,7 +184,7 @@ export interface UpdateSharePayload {
 
 // ===== Folders =====
 
-/** GET /folders (flat) — поле path содержит полный путь вида "Родитель/Дочерняя". */
+/** GET /folders (flat) — the path field holds the full path like "Parent/Child". */
 export interface Folder {
   id: number;
   name: string;
@@ -194,7 +198,7 @@ export interface Folder {
   created?: string | null;
 }
 
-/** GET /folders/counts: ключи — id папок, плюс 'uncategorized' и 'Favorites'. */
+/** GET /folders/counts: keys are folder ids, plus 'uncategorized' and 'Favorites'. */
 export type FolderCounts = Record<string, number>;
 
 export interface CreateFolderPayload {
@@ -205,7 +209,7 @@ export interface CreateFolderPayload {
 
 // ===== Trash =====
 
-/** Элемент корзины: GET /trash. */
+/** Trash item: GET /trash. */
 export interface TrashedNote {
   id: number;
   heading: string;
@@ -226,7 +230,7 @@ export interface Workspace {
 }
 
 // ===== Tags =====
-// GET /tags возвращает { success, tags: string[] }
+// GET /tags returns { success, tags: string[] }
 
 // ===== Attachments =====
 
@@ -239,14 +243,14 @@ export interface Attachment {
   uploaded_at: string;
 }
 
-/** Файл из expo-document-picker для загрузки. */
+/** File from expo-document-picker to upload. */
 export interface UploadFile {
   uri: string;
   name: string;
   mimeType?: string;
 }
 
-// ===== Notifications (глобальные reminders) =====
+// ===== Notifications (global reminders) =====
 
 export interface NotificationItem {
   id: number;
@@ -345,9 +349,9 @@ export interface GitSyncProgress {
   [key: string]: unknown;
 }
 
-/** PUT /git-sync/config: поля сохраняются по одному — отсутствующие ключи сервер не трогает,
- *  пустая строка очищает значение. Пустой token при редактировании не отправляем, чтобы
- *  не затирать сохранённый. */
+/** PUT /git-sync/config: fields are saved individually — the server leaves missing keys untouched,
+ *  an empty string clears the value. When editing, an empty token is not sent so as not to
+ *  overwrite the stored one. */
 export interface GitSyncConfig {
   provider?: 'github' | 'gitlab' | 'forgejo';
   repo?: string;

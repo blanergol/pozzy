@@ -1,7 +1,7 @@
 import { CacheBackend } from './types';
 
-// На web оффлайн-кэш живёт только в рамках сессии: без SecureStore ключ данных
-// всё равно нельзя сохранить, а шифротекст рядом с ключом в localStorage бесполезен.
+// On web the offline cache lives only for the session: without SecureStore the data key
+// can't be persisted anyway, and ciphertext next to its key in localStorage is useless.
 const memory = new Map<string, string>();
 
 export const cacheBackend: CacheBackend = {

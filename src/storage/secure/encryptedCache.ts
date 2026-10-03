@@ -11,20 +11,20 @@ import {
 import { keySegment, secretKeys, secrets } from './secrets';
 
 /**
- * Зашифрованный кэш поверх AsyncStorage (на web — поверх памяти сессии).
+ * Encrypted cache on top of AsyncStorage (on web — on top of session memory).
  *
- * Scope определяет ключ данных (DEK): у каждого сервера свой
- * `pozzy.server.<id>.dek`, у общих для приложения данных (чат, шаблоны) —
- * `pozzy.app.dek`. Каждое значение шифруется отдельно, со случайным nonce и
- * ключом хранилища в качестве associated data.
+ * The scope determines the data key (DEK): each server has its own
+ * `pozzy.server.<id>.dek`, app-wide data (chat, templates) uses
+ * `pozzy.app.dek`. Each value is encrypted separately, with a random nonce and
+ * the storage key as associated data.
  *
- * Значение без префикса `enc:` — legacy-открытый текст: при чтении
- * возвращается как есть и тут же перешифровывается на месте.
- * Нечитаемое значение (нет ключа данных, подмена, повреждение) удаляется и
- * возвращается в списке unreadable — вызывающий решает, что это значит.
+ * A value without the `enc:` prefix is legacy plaintext: on read it is
+ * returned as is and immediately re-encrypted in place.
+ * An unreadable value (no data key, tampering, corruption) is deleted and
+ * returned in the unreadable list — the caller decides what that means.
  */
 
-/** Scope для данных приложения, не привязанных к серверу. */
+/** Scope for app data not tied to a server. */
 export const APP_SCOPE = '@app';
 
 export type CacheScope = string;
@@ -33,16 +33,16 @@ function dataKeyName(scope: CacheScope): string {
   return scope === APP_SCOPE ? secretKeys.appDataKey : secretKeys.serverDataKey(scope);
 }
 
-/** Префикс всех записей кэша сервера. */
+/** Prefix of all cache entries of a server. */
 export function serverCachePrefix(serverId: string): string {
   return `pozzy.cache.${keySegment(serverId)}.`;
 }
 
-// ===== Ключи данных =====
+// ===== Data keys =====
 
 const dataKeys = new Map<CacheScope, Uint8Array>();
 const dataKeyLocks = new Map<CacheScope, Promise<unknown>>();
-// Удалённые серверы: запоздавшая запись не должна воссоздать ключ данных и кэш
+// Removed servers: a late write must not recreate the data key and the cache
 const closedScopes = new Set<CacheScope>();
 
 class ScopeClosedError extends Error {
@@ -77,8 +77,8 @@ async function loadDataKey(scope: CacheScope, create: boolean): Promise<Uint8Arr
     }
     if (!create) return null;
     if (closedScopes.has(scope)) throw new ScopeClosedError();
-    // Нет ключа (первый запуск, восстановление из бэкапа) или он повреждён:
-    // создаём новый. Данные под старым ключом уже нечитаемы.
+    // No key (first launch, restore from backup) or it is corrupted:
+    // create a new one. Data under the old key is already unreadable.
     const encoded = generateDataKey();
     if (!(await secrets.setVerified(name, encoded))) {
       throw new Error('data key unavailable');
@@ -89,10 +89,10 @@ async function loadDataKey(scope: CacheScope, create: boolean): Promise<Uint8Arr
   });
 }
 
-// ===== Очередь записей =====
+// ===== Write queue =====
 
-// Все записи scope идут по одной цепочке, чтения ждут её хвост:
-// чтение после записи всегда видит записанное.
+// All writes of a scope go through a single chain, reads wait for its tail:
+// a read after a write always sees what was written.
 const writeLocks = new Map<CacheScope, Promise<unknown>>();
 
 function enqueueWrite<T>(scope: CacheScope, fn: () => Promise<T>): Promise<T> {
@@ -105,7 +105,7 @@ async function waitWrites(scope: CacheScope): Promise<void> {
 
 export interface CacheReadResult {
   values: Map<string, string>;
-  /** Ключи, значения которых не удалось расшифровать (они уже удалены). */
+  /** Keys whose values could not be decrypted (they have already been deleted). */
   unreadable: string[];
 }
 
@@ -139,8 +139,8 @@ async function readMany(scope: CacheScope, keys: readonly string[]): Promise<Cac
     await enqueueWrite(scope, () => cacheBackend.multiRemove(unreadable)).catch(() => {});
   }
   if (legacy.length > 0) {
-    // Перешифровываем legacy на месте. Перед записью перечитываем: если значение
-    // успели перезаписать, не затираем более новое. Ошибка не мешает чтению.
+    // Re-encrypt legacy values in place. Re-read before writing: if the value has
+    // been overwritten meanwhile, don't clobber the newer one. An error doesn't block the read.
     await enqueueWrite(scope, async () => {
       const key = await loadDataKey(scope, true);
       if (!key) return;
@@ -151,7 +151,7 @@ async function readMany(scope: CacheScope, keys: readonly string[]): Promise<Cac
       const pairs = legacy
         .filter(([k]) => stillLegacy.has(k))
         .map(([k, v]) => [k, encryptString(key, v, k)] as [string, string])
-        // перед заменой исходника убеждаемся, что конверт расшифровывается
+        // before replacing the original, make sure the envelope decrypts
         .filter(([k, env]) => decryptString(key, env, k) === values.get(k));
       if (pairs.length > 0) await cacheBackend.multiSet(pairs);
     }).catch(() => {});
@@ -175,7 +175,7 @@ async function removeMany(scope: CacheScope, keys: readonly string[]): Promise<v
 }
 
 export const encryptedCache = {
-  /** false = кэш живёт только в рамках сессии (web). */
+  /** false = the cache lives only for the session (web). */
   persistent: cacheBackend.persistent,
 
   async get(scope: CacheScope, key: string): Promise<string | null> {
@@ -189,10 +189,10 @@ export const encryptedCache = {
     await writeMany(scope, [[key, value]]);
   },
 
-  /** Атомарно, насколько позволяет платформа (Android: одна транзакция). */
+  /** Atomic as far as the platform allows (Android: a single transaction). */
   setMany: writeMany,
 
-  /** Записать, прочитать обратно, расшифровать и сравнить (для миграции). */
+  /** Write, read back, decrypt and compare (for migration). */
   async setVerified(scope: CacheScope, key: string, value: string): Promise<boolean> {
     try {
       await writeMany(scope, [[key, value]]);
@@ -210,8 +210,8 @@ export const encryptedCache = {
   deleteMany: removeMany,
 
   /**
-   * Миграция: зашифровать legacy-значения на месте с проверкой обратным
-   * чтением. true = под этими ключами не осталось открытого текста.
+   * Migration: encrypt legacy values in place, verified by reading them back.
+   * true = no plaintext is left under these keys.
    */
   async encryptInPlace(scope: CacheScope, keys: readonly string[]): Promise<boolean> {
     let ok = true;
@@ -222,7 +222,7 @@ export const encryptedCache = {
         if (raw === null || isEnvelope(raw)) continue;
         if (!(await encryptedCache.setVerified(scope, key, raw))) {
           ok = false;
-          // Проверка не прошла — возвращаем исходник, чтобы не потерять данные
+          // Verification failed — put the original back so no data is lost
           await enqueueWrite(scope, () => cacheBackend.setItem(key, raw)).catch(() => {});
         }
       } catch {
@@ -232,13 +232,13 @@ export const encryptedCache = {
     return ok;
   },
 
-  /** Все ключи хранилища с префиксом. */
+  /** All storage keys with the given prefix. */
   async keysWithPrefix(prefix: string): Promise<string[]> {
     const all = await cacheBackend.getAllKeys();
     return all.filter((k) => k.startsWith(prefix));
   },
 
-  /** Удалить весь кэш сервера и его ключ данных; дальнейшие записи scope отклоняются. */
+  /** Delete the server's entire cache and its data key; further writes to the scope are rejected. */
   async clearServer(serverId: string): Promise<void> {
     closedScopes.add(serverId);
     await enqueueWrite(serverId, async () => {
@@ -251,13 +251,13 @@ export const encryptedCache = {
     });
   },
 
-  /** Шифрование бинарных данных (файлы вложений) ключом scope. */
+  /** Encrypt binary data (attachment files) with the scope's key. */
   async encryptBytes(scope: CacheScope, bytes: Uint8Array, associatedData: string): Promise<string> {
     const key = (await loadDataKey(scope, true)) as Uint8Array;
     return encryptBytes(key, bytes, associatedData);
   },
 
-  /** null = ключа данных нет или содержимое не проходит проверку. */
+  /** null = there is no data key or the content fails verification. */
   async decryptBytes(
     scope: CacheScope,
     envelope: string,
@@ -272,13 +272,13 @@ export const encryptedCache = {
     }
   },
 
-  /** Есть ли у scope ключ данных (без создания). */
+  /** Whether the scope has a data key (without creating one). */
   async hasDataKey(scope: CacheScope): Promise<boolean> {
     return (await loadDataKey(scope, false)) !== null;
   },
 };
 
-/** Только для тестов: сбросить закэшированные в памяти ключи данных. */
+/** Tests only: reset the in-memory cached data keys. */
 export function __resetDataKeyCacheForTests(): void {
   dataKeys.clear();
   dataKeyLocks.clear();

@@ -1,14 +1,14 @@
 const { withAppBuildGradle, createRunOncePlugin } = require('@expo/config-plugins');
 
 /**
- * Добавляет release-подпись в генерируемый android/app/build.gradle.
- * Креды приезжают через переменные окружения (CI: .github/workflows/android-apk.yml):
+ * Adds a release signing config to the generated android/app/build.gradle.
+ * Credentials come from environment variables (CI: .github/workflows/android-apk.yml):
  *   RELEASE_KEYSTORE_PATH / RELEASE_KEYSTORE_PASSWORD / RELEASE_KEY_ALIAS / RELEASE_KEY_PASSWORD
- * Без переменных release собирается debug-подписью — локальная сборка не ломается.
+ * Without them, release is signed with the debug key — local builds keep working.
  */
 
 const RELEASE_SIGNING_CONFIG = `        release {
-            // Подпись из CI через env (.github/workflows/android-apk.yml)
+            // Release signing from CI via env (.github/workflows/android-apk.yml)
             if (System.getenv("RELEASE_KEYSTORE_PATH")) {
                 storeFile file(System.getenv("RELEASE_KEYSTORE_PATH"))
                 storePassword System.getenv("RELEASE_KEYSTORE_PASSWORD")
@@ -18,7 +18,7 @@ const RELEASE_SIGNING_CONFIG = `        release {
         }
 `;
 
-// Шаблонный блок debug-подписи из expo-шаблона (android/app/build.gradle)
+// Debug signing block from the Expo template (android/app/build.gradle)
 const DEBUG_BLOCK = `        debug {
             storeFile file('debug.keystore')
             storePassword 'android'
@@ -28,17 +28,17 @@ const DEBUG_BLOCK = `        debug {
 `;
 
 function apply(contents) {
-  // Уже применён (повторный prebuild) — пропускаем
+  // Already applied (repeated prebuild) — skip
   if (contents.includes('RELEASE_KEYSTORE_PATH')) return contents;
 
   if (!contents.includes(DEBUG_BLOCK)) {
-    throw new Error('withReleaseSigning: не найден шаблонный блок signingConfigs.debug');
+    throw new Error('withReleaseSigning: template block signingConfigs.debug not found');
   }
   let out = contents.replace(DEBUG_BLOCK, DEBUG_BLOCK + RELEASE_SIGNING_CONFIG);
 
   const releaseRe = /(buildTypes[\s\S]*?release\s*\{[^}]*?)signingConfig\s+signingConfigs\.debug/;
   if (!releaseRe.test(out)) {
-    throw new Error('withReleaseSigning: не найден signingConfig в buildTypes.release');
+    throw new Error('withReleaseSigning: signingConfig not found in buildTypes.release');
   }
   out = out.replace(
     releaseRe,

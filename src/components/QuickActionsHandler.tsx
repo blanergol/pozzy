@@ -7,9 +7,9 @@ import { navigationRef } from '../navigation/navigationRef';
 import { useI18n } from '../i18n';
 
 /**
- * Быстрые действия на иконке приложения (долгое нажатие): новая заметка,
- * голосовая заметка, поиск. Без иконок — на Android свои требуют ассетов,
- * без них показывается иконка приложения.
+ * App icon quick actions (long press): new note, voice note, search.
+ * No icons: on Android custom ones require assets; without them the app icon
+ * is shown instead.
  */
 export default function QuickActionsHandler() {
   const { client, activeProfile, workspace } = useSettings();
@@ -18,7 +18,7 @@ export default function QuickActionsHandler() {
   const handledInitialRef = useRef(false);
   const busyRef = useRef(false);
 
-  // Пункты меню; переустанавливаем при смене языка
+  // Menu items; re-set when the language changes
   useEffect(() => {
     QuickActions.isSupported()
       .then((ok) => {
@@ -70,13 +70,13 @@ export default function QuickActionsHandler() {
     [client, activeProfile, workspace, isOnline, reportNetworkError, reportSuccess, t],
   );
 
-  // Тап по действию на живом приложении
+  // Action tapped while the app is running
   useEffect(() => {
     const sub = QuickActions.addListener((action) => handle(String(action.id)));
     return () => sub.remove();
   }, [handle]);
 
-  // Холодный старт по действию
+  // Cold start from an action
   useEffect(() => {
     if (handledInitialRef.current || !client) return;
     const initial = QuickActions.initial;

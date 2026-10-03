@@ -1,13 +1,13 @@
 import { secretBackend } from './secretBackend';
 
 /**
- * Секреты (пароли серверов, API-ключи, ключи данных) — только через этот модуль.
+ * Secrets (server passwords, API keys, data keys) — only through this module.
  *
- * SecureStore не умеет перечислять записи, а iOS Keychain переживает удаление
- * приложения. Поэтому все записанные ключи ведутся в индексе `pozzy.keys`
- * (тоже в SecureStore): по нему при чистой установке удаляются остатки.
- * Ключ попадает в индекс ДО записи значения, так что прерывание оставляет
- * в индексе надмножество — безопасно.
+ * SecureStore can't enumerate entries, and the iOS Keychain survives app
+ * uninstall. So all written keys are tracked in the `pozzy.keys` index
+ * (also in SecureStore): on a fresh install leftovers are deleted by it.
+ * A key is added to the index BEFORE its value is written, so an interruption
+ * leaves a superset in the index — which is safe.
  */
 
 const KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
@@ -15,7 +15,7 @@ const INDEX_KEY = 'pozzy.keys';
 const READ_ATTEMPTS = 3;
 const READ_RETRY_MS = 50;
 
-/** Секрет не удалось прочитать даже после повторов. Сообщение без данных. */
+/** The secret could not be read even after retries. The message contains no data. */
 export class SecretReadError extends Error {
   constructor() {
     super('secret read failed');
@@ -27,10 +27,10 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Идентификатор → сегмент ключа SecureStore ([A-Za-z0-9._-]). */
+/** Identifier → SecureStore key segment ([A-Za-z0-9._-]). */
 export function keySegment(id: string): string {
   if (/^[A-Za-z0-9-]+$/.test(id)) return id;
-  // "." и "_" зарезервированы под разделитель и escape
+  // "." and "_" are reserved for the separator and the escape
   return id.replace(/[^A-Za-z0-9-]/g, (ch) => `_${ch.charCodeAt(0).toString(16)}_`);
 }
 
@@ -47,7 +47,7 @@ function assertKey(key: string): void {
   }
 }
 
-// Изменения индекса сериализуем: конкурентные set/delete иначе теряют записи
+// Index changes are serialized: concurrent set/delete would otherwise lose entries
 let indexChain: Promise<unknown> = Promise.resolve();
 
 function withIndex<T>(fn: () => Promise<T>): Promise<T> {
@@ -75,14 +75,14 @@ async function writeIndex(keys: string[]): Promise<void> {
 }
 
 export const secrets = {
-  /** true = секреты переживают перезапуск (нативные платформы). */
+  /** true = secrets survive a restart (native platforms). */
   persistent: secretBackend.persistent,
 
   /**
-   * null = значения нет. Ошибка чтения повторяется несколько раз (на части
-   * Android-устройств Keystore изредка отвечает ошибкой); если она стабильна —
-   * SecretReadError. Вызывающий решает: для ключа данных это «нечитаемый ключ»,
-   * для пароля — «неизвестно», и удалять такой пароль нельзя.
+   * null = no value. A read error is retried several times (on some
+   * Android devices the Keystore occasionally responds with an error); if it persists —
+   * SecretReadError. The caller decides: for a data key this means "unreadable key",
+   * for a password — "unknown", and such a password must not be deleted.
    */
   async read(key: string): Promise<string | null> {
     assertKey(key);
@@ -90,14 +90,14 @@ export const secrets = {
       try {
         return await secretBackend.get(key);
       } catch {
-        // текст ошибки платформы не пробрасываем
+        // the platform error text is not propagated
         if (attempt < READ_ATTEMPTS - 1) await delay(READ_RETRY_MS * (attempt + 1));
       }
     }
     throw new SecretReadError();
   },
 
-  /** Как read, но стабильная ошибка чтения → null. */
+  /** Like read, but a persistent read error → null. */
   async get(key: string): Promise<string | null> {
     try {
       return await secrets.read(key);
@@ -116,7 +116,7 @@ export const secrets = {
     await secretBackend.set(key, value);
   },
 
-  /** Записать и прочитать обратно; false = значение в хранилище не совпало. */
+  /** Write and read back; false = the stored value did not match. */
   async setVerified(key: string, value: string): Promise<boolean> {
     try {
       await secrets.set(key, value);
@@ -135,15 +135,15 @@ export const secrets = {
     });
   },
 
-  /** Удалить все секреты сервера: пароль и ключ данных. */
+  /** Delete all secrets of a server: the password and the data key. */
   async deleteServer(serverId: string): Promise<void> {
     await secrets.delete(secretKeys.serverPassword(serverId));
     await secrets.delete(secretKeys.serverDataKey(serverId));
   },
 
   /**
-   * Удалить всё, что приложение когда-либо записало (по индексу).
-   * Используется при чистой установке: на iOS Keychain переживает удаление.
+   * Delete everything the app has ever written (by the index).
+   * Used on a fresh install: on iOS the Keychain survives uninstall.
    */
   async deleteAll(): Promise<void> {
     await withIndex(async () => {

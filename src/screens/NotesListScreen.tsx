@@ -59,7 +59,7 @@ function formatDate(value: string, locale: Locale): string {
   });
 }
 
-// Пагинация списка: показываем порциями, догружаем при скролле
+// List pagination: render in chunks, load more on scroll
 const PAGE_SIZE = 10;
 
 export default function NotesListScreen({ navigation, route }: Props) {
@@ -74,7 +74,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
   const focusSearch = route.params?.focusSearch;
   const searchInputRef = useRef<TextInput>(null);
 
-  // Deep action «Поиск» (quick actions): фокусируем поле поиска один раз
+  // "Search" deep action (quick actions): focus the search field once
   useEffect(() => {
     if (focusSearch) {
       searchInputRef.current?.focus();
@@ -82,7 +82,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
     }
   }, [focusSearch, navigation]);
 
-  // Репозиторий: онлайн — сервер, оффлайн — локальный кэш
+  // Repository: server when online, local cache when offline
   const repoCtx = useMemo<RepoContext | null>(
     () =>
       client
@@ -106,14 +106,14 @@ export default function NotesListScreen({ navigation, route }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [wsModalVisible, setWsModalVisible] = useState(false);
   const [workspaces, setWorkspaces] = useState<Workspace[] | null>(null);
-  // Управление пространствами: ActionSheet и модалка ввода имени
+  // Workspace management: ActionSheet and the name input modal
   const [wsActions, setWsActions] = useState<Workspace | null>(null);
   const [wsNameModal, setWsNameModal] = useState<
     { mode: 'create' } | { mode: 'rename'; workspace: Workspace } | null
   >(null);
   const [wsNameValue, setWsNameValue] = useState('');
   const [wsSaving, setWsSaving] = useState(false);
-  // Шаблоны заметок: модалка выбора и форма создания пользовательского шаблона
+  // Note templates: picker modal and the form for creating a custom template
   const [tplModalVisible, setTplModalVisible] = useState(false);
   const [userTemplates, setUserTemplates] = useState<NoteTemplate[]>([]);
   const [tplForm, setTplForm] = useState<{ name: string; heading: string; content: string } | null>(
@@ -121,7 +121,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
   );
   const [tplSaving, setTplSaving] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  /** null = обычный режим; Set = режим выбора с отмеченными id */
+  /** null = normal mode; Set = selection mode with the selected ids */
   const [selection, setSelection] = useState<Set<number> | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -133,7 +133,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
       const counts = await client.getReminderCounts(workspace ?? undefined);
       setUnreadCount(counts.unread_count);
     } catch {
-      // счётчик не критичен — молча игнорируем
+      // the counter isn't critical: ignore silently
     }
   }, [client, workspace]);
 
@@ -165,7 +165,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      // Повторный фокус в пределах TTL и без мутаций — сеть не дёргаем
+      // Re-focus within the TTL and without mutations: don't hit the network
       if (isFresh(lastLoadRef.current)) return;
       load(search, 'silent');
       loadUnreadCount();
@@ -173,7 +173,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
     }, [load, loadUnreadCount]),
   );
 
-  // Плавная догрузка следующей порции при скролле
+  // Smoothly load the next chunk on scroll
   const handleLoadMore = useCallback(() => {
     if (isLoadingMore || visibleCount >= notes.length) return;
     setIsLoadingMore(true);
@@ -271,7 +271,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
     ];
   }, [wsActions, t, handleDeleteWorkspace]);
 
-  // ===== Режим выбора (массовое удаление) =====
+  // ===== Selection mode (bulk delete) =====
 
   const toggleSelect = useCallback((id: number) => {
     setSelection((prev) => {
@@ -460,7 +460,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
     }
   };
 
-  // ===== Шаблоны заметок (долгое нажатие на FAB) =====
+  // ===== Note templates (long press on the FAB) =====
 
   const openTemplates = useCallback(async () => {
     setTplModalVisible(true);
@@ -485,7 +485,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
   };
 
   const handleDeleteTemplate = (tpl: NoteTemplate) => {
-    // закрываем модалку: диалог подтверждения иначе уйдёт под неё
+    // close the modal: otherwise the confirmation dialog ends up underneath it
     setTplModalVisible(false);
     dialog.alert(t('templates.deleteTitle', { name: tpl.name }), t('templates.deleteMessage'), [
       { text: t('common.cancel'), style: 'cancel' },
@@ -520,7 +520,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
 
   const handleToggleFavorite = async (note: NoteListItem) => {
     if (!repoCtx) return;
-    // Оптимистичное обновление
+    // Optimistic update
     setNotes((prev) =>
       prev.map((n) => (n.id === note.id ? { ...n, favorite: n.favorite ? 0 : 1 } : n)),
     );
@@ -671,7 +671,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
         </TouchableOpacity>
       ) : null}
 
-      {/* Переключатель пространства */}
+      {/* Workspace switcher */}
       <Modal
         visible={wsModalVisible}
         transparent
@@ -729,8 +729,8 @@ export default function NotesListScreen({ navigation, route }: Props) {
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => {
-                        // закрываем свитчер: иначе ActionSheet и диалоги
-                        // уходят под модалку (на web ломаются клики)
+                        // close the switcher: otherwise the ActionSheet and dialogs
+                        // end up underneath the modal (clicks break on web)
                         setWsModalVisible(false);
                         setWsActions(w);
                       }}
@@ -747,7 +747,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
         </TouchableOpacity>
       </Modal>
 
-      {/* Действия с пространством */}
+      {/* Workspace actions */}
       <ActionSheet
         visible={wsActions !== null}
         title={wsActions?.name}
@@ -755,7 +755,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
         onClose={() => setWsActions(null)}
       />
 
-      {/* Выбор шаблона заметки */}
+      {/* Note template picker */}
       <Modal
         visible={tplModalVisible}
         transparent
@@ -808,7 +808,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
         </TouchableOpacity>
       </Modal>
 
-      {/* Новый шаблон */}
+      {/* New template */}
       <Modal
         visible={tplForm !== null}
         transparent
@@ -869,7 +869,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
         </View>
       </Modal>
 
-      {/* Создание/переименование пространства */}
+      {/* Create/rename workspace */}
       <Modal
         visible={wsNameModal !== null}
         transparent

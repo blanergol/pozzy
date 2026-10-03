@@ -4,7 +4,7 @@ import { __resetOfflineMemoryForTests } from '../src/storage/offlineStore';
 import { __resetDataKeyCacheForTests } from '../src/storage/secure/encryptedCache';
 import { __resetMigrationForTests } from '../src/storage/secure/migration';
 
-/** Мок expo-secure-store (test/mocks/expo-secure-store.js) с тестовыми хелперами. */
+/** expo-secure-store mock (test/mocks/expo-secure-store.js) with test helpers. */
 export const secureStoreMock = SecureStore as unknown as {
   __store: Map<string, string>;
   __calls: { op: string; key: string; options?: Record<string, unknown> }[];
@@ -17,19 +17,19 @@ export const secureStoreMock = SecureStore as unknown as {
 type AsyncStorageMock = typeof AsyncStorage & { __INTERNAL_MOCK_STORAGE__: Record<string, string> };
 const asMock = AsyncStorage as AsyncStorageMock;
 
-/** Сырые значения AsyncStorage (как они лежат на диске). */
+/** Raw AsyncStorage values (as they are stored on disk). */
 export function rawAsyncStorage(): Record<string, string> {
   return asMock.__INTERNAL_MOCK_STORAGE__;
 }
 
-/** Эмуляция перезапуска приложения: in-memory состояние модулей сбрасывается. */
+/** Simulates an app restart: in-memory module state is reset. */
 export function restartApp(): void {
   __resetOfflineMemoryForTests();
   __resetDataKeyCacheForTests();
   __resetMigrationForTests();
 }
 
-/** Чистое устройство: пустые AsyncStorage и SecureStore. */
+/** Clean device: empty AsyncStorage and SecureStore. */
 export async function wipeDevice(): Promise<void> {
   await AsyncStorage.clear();
   secureStoreMock.__reset();
@@ -37,7 +37,7 @@ export async function wipeDevice(): Promise<void> {
   installCrashHooks();
 }
 
-// ===== Эмуляция падения процесса на N-й операции хранилища =====
+// ===== Simulating a process crash on the N-th storage operation =====
 
 let budget: number | null = null;
 let ops = 0;
@@ -64,7 +64,7 @@ export function installCrashHooks(): void {
   }
 }
 
-/** Все операции после n-й бросают, как будто процесс умер. */
+/** All operations after the n-th throw, as if the process had died. */
 export function crashAfter(n: number): void {
   ops = 0;
   budget = n;

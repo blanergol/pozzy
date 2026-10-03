@@ -66,7 +66,7 @@ describe('секреты: нечитаемое не удаляется', () => {
     secureStoreMock.__failNext('get', 3);
     const { servers } = await loadServers();
     expect(servers[0].password).toBe('');
-    // переключение сервера / правка другого профиля → persist
+    // switching server / editing another profile → persist
     await saveServers({ servers, activeId: P });
     expect(secureStoreMock.__store.get(secretKeys.serverPassword(P))).toBe('S3CRET');
     expect((await loadServers()).servers[0].password).toBe('S3CRET');
@@ -79,7 +79,7 @@ describe('секреты: нечитаемое не удаляется', () => {
     expect(loaded.apiKey).toBe('');
     await saveAISettings({ ...loaded, enabled: false });
     expect(secureStoreMock.__store.get(secretKeys.aiApiKey())).toBe('sk-1');
-    // пользователь явно очищает ключ после успешного чтения — удаляется
+    // the user explicitly clears the key after a successful read — it is deleted
     const again = await loadAISettings();
     await saveAISettings({ ...again, apiKey: '' });
     expect(secureStoreMock.__store.has(secretKeys.aiApiKey())).toBe(false);
@@ -90,7 +90,7 @@ describe('секреты: нечитаемое не удаляется', () => {
     const removal = saveServers({ servers: [], activeId: null });
     const secretsGone = removeServerSecrets(P);
     await Promise.all([early, removal, secretsGone]);
-    // ещё одна запоздавшая запись со старым состоянием
+    // one more late write with the old state
     await saveServers({ servers: [profile('S3CRET')], activeId: P });
     expect(secureStoreMock.__store.has(secretKeys.serverPassword(P))).toBe(false);
     expect((await loadServers()).servers).toEqual([]);
@@ -125,9 +125,9 @@ describe('офлайн-кэш: сбои записи и чтения', () => {
     await updateOfflineData(P, (d) => {
       d.pending = [op('c1', 'create', -1, { heading: 'x' }), op('u1', 'update', -1, { content: 'EDIT' })];
     });
-    // синк отправил create: alias -1 → 42, create убран из очереди
+    // sync sent the create: alias -1 → 42, the create is removed from the queue
     const multiSet = jest.spyOn(AsyncStorage, 'multiSet').mockImplementationOnce(async (pairs) => {
-      // iOS: первый ключ (очередь) уже на диске, дальше процесс убит
+      // iOS: the first key (the queue) is already on disk, then the process is killed
       rawAsyncStorage()[pairs[0][0]] = pairs[0][1];
       throw new Error('killed');
     });
@@ -147,11 +147,11 @@ describe('офлайн-кэш: сбои записи и чтения', () => {
       legacyOfflineKey(P),
       JSON.stringify({ pending: [op('old', 'update', 1, { content: 'OLD' })] }),
     );
-    await loadOfflineData(P); // конвертация, legacy удалён
+    await loadOfflineData(P); // conversion, legacy deleted
     await updateOfflineData(P, (d) => {
       d.pending.push(op('new', 'update', 2, { content: 'NEW' }));
     });
-    // эмулируем сбой между проверенной записью и удалением legacy: блоб снова на диске
+    // emulate a failure between the verified write and legacy deletion: the blob is back on disk
     await AsyncStorage.setItem(
       legacyOfflineKey(P),
       JSON.stringify({ pending: [op('old', 'update', 1, { content: 'OLD' })] }),
@@ -188,7 +188,7 @@ describe('офлайн-кэш: сбои записи и чтения', () => {
       listNotes: jest.fn(async () => []),
       listFolders: jest.fn(async () => []),
       updateNote: jest.fn(async (id: number) => {
-        if (id === 2) diskDuringSync = snapshotDisk(); // «процесс убит» здесь
+        if (id === 2) diskDuringSync = snapshotDisk(); // "the process is killed" here
       }),
       uploadAttachment: jest.fn(async () => {}),
     };

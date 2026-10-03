@@ -1,7 +1,7 @@
 import { PoznoteClient } from '../api/client';
 import { NoteListItem } from '../api/types';
 
-/** Аргументы инструмента от модели (произвольный JSON-объект). */
+/** Tool arguments from the model (an arbitrary JSON object). */
 export type ToolArgs = Record<string, unknown>;
 
 // ===== helpers =====
@@ -27,7 +27,7 @@ export function clampLimit(value: unknown, fallback = 10): number {
   return Math.min(Math.floor(n), 25);
 }
 
-/** Найти заметку: по note_id или по заголовку (через поиск). Возвращает id или строку-ошибку для модели. */
+/** Find a note: by note_id or by heading (via search). Returns an id or an error string for the model. */
 export async function resolveNoteId(client: PoznoteClient, args: ToolArgs): Promise<number | string> {
   const rawId = Number(args.note_id);
   if (Number.isFinite(rawId) && rawId > 0) return Math.floor(rawId);
@@ -38,7 +38,7 @@ export async function resolveNoteId(client: PoznoteClient, args: ToolArgs): Prom
   const found = await client.searchNotes({ q: heading, limit: 10 });
   if (found.length === 0) return err(`note not found: ${heading}`);
 
-  // точное совпадение заголовка предпочтительнее частичного
+  // an exact heading match is preferred over a partial one
   const exact = found.filter((n) => n.heading.toLowerCase() === heading.toLowerCase());
   const candidates = exact.length > 0 ? exact : found;
   if (candidates.length === 1) return candidates[0].id;
@@ -49,7 +49,7 @@ export async function resolveNoteId(client: PoznoteClient, args: ToolArgs): Prom
   );
 }
 
-/** Найти папку по имени. Возвращает id или строку-ошибку для модели. */
+/** Find a folder by name. Returns an id or an error string for the model. */
 export async function resolveFolderId(
   client: PoznoteClient,
   folder: unknown,
@@ -78,7 +78,7 @@ export async function resolveNoteOrError(
   return { id: resolved };
 }
 
-/** Поиск заметок для пакетных операций: текст + диапазон дат создания, лимит по умолчанию 50. */
+/** Note search for batch operations: text + creation date range, default limit 50. */
 export async function findByQuery(client: PoznoteClient, args: ToolArgs): Promise<NoteListItem[]> {
   const notes = await client.listNotes({
     search: typeof args.query === 'string' && args.query.trim() ? args.query.trim() : undefined,

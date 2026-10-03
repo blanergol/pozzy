@@ -6,7 +6,7 @@ import { SMART_TOOLS } from './smart';
 import { TRASH_TOOLS } from './trash';
 import { PoznoteTool } from './types';
 
-/** Каталог инструментов агента (30 штук), сгруппированных по доменам. */
+/** Catalog of agent tools (30 in total), grouped by domain. */
 export const POZNOTE_TOOLS: PoznoteTool[] = [
   ...NOTE_TOOLS,
   ...TRASH_TOOLS,

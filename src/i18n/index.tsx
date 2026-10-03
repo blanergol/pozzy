@@ -29,14 +29,14 @@ function interpolate(template: string, params?: Params): string {
   );
 }
 
-// Текущая локаль на уровне модуля — для кода вне React (api-клиент, утилиты)
+// Current locale at module level — for code outside React (API client, utilities)
 let currentLocale: Locale = 'ru';
 
 export function getCurrentLocale(): Locale {
   return currentLocale;
 }
 
-/** Перевод для не-компонентного кода (describeError и т.п.). */
+/** Translation for non-component code (describeError etc.). */
 export function translate(key: TranslationKey, params?: Params): string {
   return interpolate(dictionaries[currentLocale][key] ?? key, params);
 }
@@ -69,7 +69,7 @@ export function useI18n(): I18nContextValue {
   return useContext(I18nContext);
 }
 
-/** Локаль для toLocaleString и т.п. */
+/** Locale for toLocaleString etc. */
 export function dateLocale(locale: Locale): string {
   return locale === 'ru' ? 'ru-RU' : 'en-US';
 }

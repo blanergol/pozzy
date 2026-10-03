@@ -17,9 +17,9 @@ export function base64Encode(input: string): string {
   return base64FromBytes(bytes);
 }
 
-/** Base64 для бинарных данных (скачанные вложения, шифротекст). */
+/** Base64 for binary data (downloaded attachments, ciphertext). */
 export function base64FromBytes(bytes: ArrayLike<number>): string {
-  // Быстрый путь: нативный btoa (есть в Hermes начиная с RN 0.74 и в браузерах)
+  // Fast path: native btoa (available in Hermes since RN 0.74 and in browsers)
   if (typeof btoa === 'function') {
     const parts: string[] = [];
     for (let i = 0; i < bytes.length; i += 0x8000) {
@@ -28,7 +28,7 @@ export function base64FromBytes(bytes: ArrayLike<number>): string {
     }
     return btoa(parts.join(''));
   }
-  // Собираем кусками: посимвольная конкатенация на мегабайтных файлах медленная
+  // Build in chunks: per-character concatenation is slow on megabyte-sized files
   const chunks: string[] = [];
   let out = '';
   for (let i = 0; i < bytes.length; i += 3) {
@@ -53,13 +53,13 @@ export function base64FromBytes(bytes: ArrayLike<number>): string {
 const DECODE_TABLE: Int16Array = (() => {
   const table = new Int16Array(128).fill(-1);
   for (let i = 0; i < CHARS.length; i++) table[CHARS.charCodeAt(i)] = i;
-  // base64url тоже принимаем
+  // base64url is accepted too
   table['-'.charCodeAt(0)] = 62;
   table['_'.charCodeAt(0)] = 63;
   return table;
 })();
 
-/** Base64 → байты. Некорректный ввод → исключение (без содержимого в сообщении). */
+/** Base64 → bytes. Invalid input → exception (without the content in the message). */
 export function base64ToBytes(input: string): Uint8Array {
   if (typeof atob === 'function' && !/[-_]/.test(input)) {
     let binary: string;
@@ -96,13 +96,13 @@ export function base64ToBytes(input: string): Uint8Array {
   return out;
 }
 
-/** Строка → UTF-8 байты. */
+/** String → UTF-8 bytes. */
 export function utf8Encode(input: string): Uint8Array {
   if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(input);
   return Uint8Array.from(utf8Bytes(input));
 }
 
-/** UTF-8 байты → строка (без TextDecoder: в Hermes его может не быть). */
+/** UTF-8 bytes → string (without TextDecoder: Hermes may not have it). */
 export function utf8Decode(bytes: Uint8Array): string {
   if (typeof TextDecoder !== 'undefined') return new TextDecoder().decode(bytes);
   const parts: string[] = [];

@@ -1,9 +1,9 @@
 /**
- * Единая точка доступа к чувствительным данным. Остальной код не обращается
- * к SecureStore напрямую и не пишет секреты/содержимое заметок в AsyncStorage.
+ * Single entry point for sensitive data. The rest of the code does not access
+ * SecureStore directly and does not write secrets/note contents to AsyncStorage.
  *
- *   secrets        — пароли, API-ключи, ключи данных (SecureStore; web — память)
- *   encryptedCache — зашифрованный кэш (AsyncStorage; web — память сессии)
+ *   secrets        — passwords, API keys, data keys (SecureStore; web — memory)
+ *   encryptedCache — encrypted cache (AsyncStorage; web — session memory)
  */
 export { secrets, secretKeys } from './secrets';
 export { APP_SCOPE, encryptedCache } from './encryptedCache';

@@ -1,4 +1,4 @@
-/** Заголовок веб-страницы для заметки из «поделиться ссылкой» (фича без сервера). */
+/** Web page title for a note created via "share link" (client-side feature, no server). */
 export async function fetchPageTitle(url: string): Promise<string | null> {
   try {
     const ctrl = new AbortController();

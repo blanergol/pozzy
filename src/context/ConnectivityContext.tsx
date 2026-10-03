@@ -3,13 +3,13 @@ import NetInfo from '@react-native-community/netinfo';
 
 interface ConnectivityContextValue {
   /**
-   * false = оффлайн-режим: нет сети или сервер недоступен.
-   * Репозиторий в этом случае работает с локальным кэшем.
+   * false = offline mode: no network or the server is unreachable.
+   * In that case the repository works with the local cache.
    */
   isOnline: boolean;
-  /** Сигнал от сетевого слоя: fetch упал по сети (сервер недоступен). */
+  /** Signal from the network layer: fetch failed with a network error (server unreachable). */
   reportNetworkError: () => void;
-  /** Сигнал от сетевого слоя: запрос прошёл — сервер доступен. */
+  /** Signal from the network layer: the request succeeded, the server is reachable. */
   reportSuccess: () => void;
 }
 
@@ -25,11 +25,11 @@ export function ConnectivityProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
-      // null (неизвестно) считаем онлайном — оптимистично
+      // null (unknown) counts as online: optimistic
       const up = state.isConnected !== false;
       setNetworkUp(up);
-      // Появление сети — повод снова попробовать сервер:
-      // sync при ошибке вернёт serverReachable=false через reportNetworkError.
+      // Network coming back is a reason to retry the server:
+      // on failure, sync will set serverReachable=false again via reportNetworkError.
       if (up) setServerReachable(true);
     });
     return unsubscribe;

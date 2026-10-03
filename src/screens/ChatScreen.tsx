@@ -41,7 +41,7 @@ interface PendingApproval {
   resolve: (approved: boolean) => void;
 }
 
-// Длинные ответы ассистента схлопываются с кнопкой «показать полностью»
+// Long assistant replies are collapsed behind a "show in full" button
 const COLLAPSE_THRESHOLD = 600;
 const COLLAPSE_PREVIEW = 400;
 
@@ -56,8 +56,8 @@ export default function ChatScreen({ navigation }: Props) {
   const { t, locale } = useI18n();
   const styles = useThemedStyles(createStyles, colors);
   const keyboardPadding = useAndroidKeyboardPadding();
-  // Клавиатура перекрывает таб-бар — вычитаем его высоту, но возвращаем
-  // системный инсет: endCoordinates.height его уже не включает.
+  // The keyboard covers the tab bar: subtract its height, but add back the
+  // system inset, since endCoordinates.height no longer includes it.
   const tabBarHeight = useBottomTabBarHeight();
   const bottomInset = useSafeAreaInsets().bottom;
   const bottomPadding = Math.max(0, keyboardPadding - tabBarHeight + bottomInset);
@@ -75,7 +75,7 @@ export default function ChatScreen({ navigation }: Props) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialog = useDialog();
 
-  // Голосовой ввод: распознанное дописывается к тексту, набранному до диктовки
+  // Voice input: recognized text is appended to whatever was typed before dictation started
   const voiceBaseTextRef = useRef('');
   const voice = useVoiceDictation({
     lang: dateLocale(locale),
@@ -96,7 +96,7 @@ export default function ChatScreen({ navigation }: Props) {
     voiceToggleRef.current();
   }, [input]);
 
-  // Озвучка ответов ассистента (TTS)
+  // Reading assistant replies aloud (TTS)
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   useEffect(
     () => () => {
@@ -113,7 +113,7 @@ export default function ChatScreen({ navigation }: Props) {
         return;
       }
       Speech.stop();
-      // Убираем markdown-разметку: озвучиваем чистый текст
+      // Strip markdown markup: speak plain text only
       const plain = markdownToPlain(message.content);
       if (!plain) return;
       setSpeakingId(message.id);
@@ -127,7 +127,7 @@ export default function ChatScreen({ navigation }: Props) {
     [speakingId, locale],
   );
 
-  // Восстановление истории при запуске
+  // Restore history on startup
   useEffect(() => {
     loadChatHistory().then((stored) => {
       if (stored.length > 0) {
@@ -137,7 +137,7 @@ export default function ChatScreen({ navigation }: Props) {
     });
   }, []);
 
-  // Персист истории (с дебаунсом, чтобы не писать на каждое изменение)
+  // Persist history (debounced so we don't write on every change)
   useEffect(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -222,7 +222,7 @@ export default function ChatScreen({ navigation }: Props) {
       const fullHistory = history
         .filter((m) => m.role !== 'tool')
         .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-      // короткая память — последние сообщения; длинная — саммари старых
+      // short-term memory: recent messages; long-term: a summary of older ones
       const memory = await buildMemoryContext(aiSettings, fullHistory);
       const reply = await runAgent(aiSettings, client, memory.history, {
         onTool: (toolName) =>

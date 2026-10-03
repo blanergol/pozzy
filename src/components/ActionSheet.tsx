@@ -19,7 +19,7 @@ interface Props {
   onClose: () => void;
 }
 
-/** Кроссплатформенный аналог action sheet: Android-Alert не показывает больше 3 кнопок. */
+/** Cross-platform action sheet equivalent: the Android Alert does not show more than 3 buttons. */
 export default function ActionSheet({ visible, title, subtitle, items, onClose }: Props) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles, colors);
@@ -38,7 +38,7 @@ export default function ActionSheet({ visible, title, subtitle, items, onClose }
                 style={styles.item}
                 onPress={() => {
                   onClose();
-                  // даём модалке закрыться перед следующим действием
+                  // let the modal close before the next action
                   setTimeout(item.onPress, 50);
                 }}
               >

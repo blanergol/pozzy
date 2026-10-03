@@ -13,7 +13,7 @@ function headingFromText(text: string): string {
   return firstLine.slice(0, 80) || translate('list.newNote');
 }
 
-/** Заметка из поделившихся текстом/ссылкой/файлами. Возвращает id заметки. */
+/** Note from shared text/link/files. Returns the note id. */
 async function createSharedNote(
   ctx: RepoContext,
   shareIntent: ShareIntent,
@@ -27,7 +27,7 @@ async function createSharedNote(
   let content: string;
   const isUrl = /^https?:\/\/\S+$/.test(text);
   if (isUrl) {
-    // Заголовок страницы: сначала meta.title из интента, затем <title> страницы
+    // Page title: first meta.title from the intent, then the page's <title>
     heading =
       shareIntent.meta?.title?.trim() || (await fetchPageTitle(text)) || text;
     content = text;
@@ -35,7 +35,7 @@ async function createSharedNote(
     heading = shareIntent.meta?.title?.trim() || headingFromText(text);
     content = text;
   } else {
-    // только файлы
+    // files only
     heading = `${translate('share.filesNote')} ${new Date().toLocaleDateString()}`;
     content = '';
   }
@@ -50,7 +50,7 @@ async function createSharedNote(
         continue;
       } catch (e) {
         if (!(e instanceof Error && e.message === 'network')) continue;
-        // сеть пропала — в оффлайн-очередь
+        // network dropped: put it in the offline queue
       }
     }
     if (ctx.profileId) {
@@ -61,8 +61,8 @@ async function createSharedNote(
 }
 
 /**
- * Невидимый компонент: обрабатывает «Поделиться в Pozzy» — создаёт заметку
- * из текста/ссылки/файлов и открывает её в редакторе.
+ * Invisible component: handles "Share to Pozzy" by creating a note
+ * from text/link/files and opening it in the editor.
  */
 export default function ShareIntentHandler() {
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent();

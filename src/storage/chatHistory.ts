@@ -1,9 +1,9 @@
 import { APP_SCOPE, encryptedCache } from './secure/encryptedCache';
 
-// История и саммари чата содержат текст заметок (ответы tools) — хранятся
-// зашифрованными ключом приложения, на web — только в рамках сессии.
+// Chat history and summary contain note text (tool responses) — they are stored
+// encrypted with the app key; on web, only for the duration of the session.
 
-/** Сообщение чата для персистента хранилища (role: user/assistant/tool). */
+/** Chat message as persisted in storage (role: user/assistant/tool). */
 export interface StoredChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'tool';
@@ -11,7 +11,7 @@ export interface StoredChatMessage {
 }
 
 export const CHAT_HISTORY_KEY = 'poznote.chatHistory.v1';
-/** Максимум хранимых сообщений — старые обрезаются. */
+/** Maximum number of stored messages — older ones are trimmed. */
 const MAX_MESSAGES = 200;
 
 export async function loadChatHistory(): Promise<StoredChatMessage[]> {
@@ -40,12 +40,12 @@ export async function clearChatHistory(): Promise<void> {
   await encryptedCache.deleteMany(APP_SCOPE, [CHAT_HISTORY_KEY, CHAT_SUMMARY_KEY]);
 }
 
-// ===== Долгосрочная память: саммари старых сообщений =====
+// ===== Long-term memory: summary of older messages =====
 
 export interface ChatSummary {
-  /** Текст саммари (пусто — памяти пока нет). */
+  /** Summary text (empty — no memory yet). */
   summary: string;
-  /** Сколько ведущих сообщений истории покрыто саммари. */
+  /** How many leading messages of the history the summary covers. */
   coveredCount: number;
 }
 

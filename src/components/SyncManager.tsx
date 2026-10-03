@@ -5,9 +5,9 @@ import { syncNow } from '../data/sync';
 import { scheduleDailyDigest, syncScheduledReminders } from '../notifications/reminders';
 
 /**
- * Невидимый компонент: при переходе оффлайн→онлайн (и при старте приложения)
- * запускает синхронизацию очереди локальных изменений с сервером.
- * После синка перепланирует локальные уведомления (напоминания + дайджест).
+ * Invisible component: on the offline→online transition (and on app start)
+ * starts syncing the queue of local changes with the server.
+ * After the sync, reschedules local notifications (reminders + digest).
  */
 export default function SyncManager() {
   const { isOnline, reportNetworkError, reportSuccess } = useConnectivity();
@@ -23,7 +23,7 @@ export default function SyncManager() {
         try {
           unread = (await client.getReminderCounts()).unread_count;
         } catch {
-          // счётчик не критичен
+          // the counter is not critical
         }
         await scheduleDailyDigest(profileId, unread);
       })

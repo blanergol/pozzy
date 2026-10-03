@@ -3,7 +3,7 @@ import { PoznoteClient } from '../../api/client';
 import { NoteListItem } from '../../api/types';
 import { POZNOTE_TOOLS } from '../tools';
 
-// Мокаем i18n: approvalPreview использует translate()
+// Mock i18n: approvalPreview uses translate()
 jest.mock('../../i18n', () => ({
   translate: (key: string, params?: Record<string, unknown>) =>
     params ? `${key}:${JSON.stringify(params)}` : key,
@@ -114,7 +114,7 @@ describe('POZNOTE_TOOLS', () => {
       ]),
     });
     await tool('get_note').run(client, { heading: 'docker' });
-    // из двух кандидатов выбирается точное совпадение (id 2), а не первый по списку
+    // of the two candidates the exact match (id 2) is chosen, not the first in the list
     expect(client.getNote).toHaveBeenCalledWith(2);
   });
 

@@ -1,6 +1,6 @@
-// Русский словарь. Ключи совпадают с en.ts.
+// Russian dictionary. Keys match en.ts.
 export const ru = {
-  // Навигация
+  // Navigation
   'nav.settings': 'Настройки',
   'nav.notes': 'Заметки',
   'nav.folders': 'Папки',
@@ -8,7 +8,7 @@ export const ru = {
   'nav.notifications': 'Уведомления',
   'nav.chat': 'AI агент',
 
-  // Общее
+  // Common
   'common.cancel': 'Отмена',
   'common.save': 'Сохранить',
   'common.delete': 'Удалить',
@@ -17,7 +17,7 @@ export const ru = {
   'common.retry': 'Повторить',
   'common.untitled': 'Без названия',
 
-  // Ошибки
+  // Errors
   'error.network': 'Сервер недоступен. Проверьте адрес и подключение к сети',
   'error.auth': 'Ошибка авторизации: проверьте логин и пароль',
   'error.forbidden': 'Доступ запрещён: недостаточно прав',
@@ -26,13 +26,13 @@ export const ru = {
   'error.lock': 'Заметка редактируется в другой сессии',
   'error.noNoteId': 'Сервер не вернул id созданной заметки',
 
-  // Оффлайн-режим
+  // Offline mode
   'offline.banner': 'Офлайн-режим: изменения сохраняются локально и синхронизируются при подключении',
   'offline.lostEditsTitle': 'Офлайн-изменения не восстановлены',
   'offline.lostEditsMessage':
     'Не удалось прочитать локальные несинхронизированные изменения для сервера {servers} (например, после восстановления из резервной копии или переноса на другое устройство). Заметки будут заново загружены с сервера, но правки, сделанные офлайн и не отправленные, потеряны.',
 
-  // Онбординг (показывается один раз при первом запуске)
+  // Onboarding (shown once on first launch)
   'onboarding.slide1.title': 'Ваши заметки. Ваш сервер.',
   'onboarding.slide1.text': 'Pozzy — мобильный клиент для self-hosted Poznote. Заметки хранятся на вашем собственном сервере, а не в чужом облаке: полная приватность и контроль над данными.',
   'onboarding.slide2.title': 'Всё для работы с заметками',
@@ -46,7 +46,7 @@ export const ru = {
   'onboarding.slide3.example': 'Сделай саммари заметки о поездке',
   'onboarding.start': 'Начать',
 
-  // Настройки
+  // Settings
   'settings.servers': 'Серверы',
   'settings.addServer': 'Добавить сервер',
   'settings.newServer': 'Новый сервер',
@@ -125,7 +125,7 @@ export const ru = {
   'settings.appLockUnavailable': 'Биометрия не настроена на этом устройстве',
   'lock.button': 'Разблокировать',
 
-  // Список заметок
+  // Note list
   'list.titleWorkspace': 'Заметки · {workspace}',
   'list.search': 'Поиск заметок',
   'list.empty': 'Заметок пока нет',
@@ -154,7 +154,7 @@ export const ru = {
   'list.a11ySelectAll': 'Выбрать все',
   'list.a11yDeleteSelected': 'Удалить выбранные',
 
-  // Шаблоны заметок (долгое нажатие на FAB)
+  // Note templates (long press on the FAB)
   'templates.title': 'Создать из шаблона',
   'templates.new': 'Новый шаблон',
   'templates.name': 'Название шаблона',
@@ -171,7 +171,7 @@ export const ru = {
   'templates.builtinShoppingContent': '- [ ] \n',
   'templates.hintPlaceholders': 'Подстановки: date, time, datetime в фигурных скобках',
 
-  // Редактор
+  // Editor
   'editor.headingPlaceholder': 'Заголовок',
   'editor.tagsPlaceholder': 'теги, через запятую',
   'editor.contentPlaceholder': 'Текст заметки',
@@ -235,7 +235,7 @@ export const ru = {
   'editor.backlinksTitle': 'Ссылки на эту заметку',
   'editor.backlinksEmpty': 'Ни одна заметка не ссылается сюда',
 
-  // Вложения
+  // Attachments
   'attach.title': 'Вложения',
   'attach.empty': 'Вложений нет. Загрузите кнопкой «+».',
   'attach.deleteTitle': 'Удалить вложение?',
@@ -243,8 +243,11 @@ export const ru = {
   'attach.pendingUpload': 'Ожидает загрузки',
   'attach.deletePendingTitle': 'Удалить ожидающий файл?',
   'attach.deletePendingMessage': 'Файл не будет загружен на сервер',
+  'attach.sizeB': 'Б',
+  'attach.sizeKB': 'КБ',
+  'attach.sizeMB': 'МБ',
 
-  // Папки
+  // Folders
   'folders.titleWorkspace': 'Папки · {workspace}',
   'folders.empty': 'Папок нет. Создайте первую кнопкой «+».',
   'folders.newFolder': 'Новая папка',
@@ -258,7 +261,7 @@ export const ru = {
   'folders.deleteFolder': 'Удалить папку',
   'folders.deleteTitle': 'Удалить папку?',
 
-  // Корзина
+  // Trash
   'trash.empty': 'Корзина пуста',  'trash.emptyAll': 'Очистить',
   'trash.emptyTitle': 'Очистить корзину?',
   'trash.emptyMessage': 'Все заметки в корзине будут удалены НАВСЕГДА. Это действие нельзя отменить.',
@@ -272,7 +275,7 @@ export const ru = {
   'trash.deleteTitle': 'Удалить навсегда?',
   'trash.deleteMessage': 'Заметку нельзя будет восстановить',
 
-  // Уведомления
+  // Notifications
   'notif.dismissAll': 'Скрыть все',
   'notif.dismissAllTitle': 'Скрыть все уведомления?',
   'notif.empty': 'Уведомлений нет',
@@ -281,7 +284,7 @@ export const ru = {
   'notif.digestTitle': 'Планы на сегодня',
   'notif.digestBody': 'Напоминаний сегодня: {today} · непрочитанных: {unread}',
 
-  // AI-чат
+  // AI chat
   'chat.empty': 'Спросите что-нибудь',
   'chat.emptyHint': 'Сообщения отправляются в OpenAI-совместимый API из настроек',
   'chat.placeholder': 'Сообщение…',
@@ -347,7 +350,7 @@ export const ru = {
   'chat.speakStop': 'Остановить озвучку',
   'share.filesNote': 'Файлы',
 
-  // Настройки AI
+  // AI settings
   'settings.aiSection': 'AI агент',
   'settings.aiEnabled': 'AI агент включён',
   'settings.aiBaseUrl': 'Base URL API',

@@ -6,9 +6,9 @@ import { subscribeLostEdits, takeLostEdits } from '../storage/secure';
 import { useDialog } from './DialogProvider';
 
 /**
- * Невидимый компонент: если несинхронизированные офлайн-правки оказались
- * нечитаемыми (потерян ключ данных), один раз показывает пользователю
- * сообщение. Флаг переживает перезапуск, пока сообщение не показано.
+ * Invisible component: if unsynced offline edits turned out to be unreadable
+ * (data key lost), shows the user a message once. The flag survives restarts
+ * until the message has been shown.
  */
 export default function LostEditsNotice() {
   const { profiles, isLoading } = useSettings();
@@ -17,11 +17,11 @@ export default function LostEditsNotice() {
   const { isReady: lockReady, locked } = useAppLock();
 
   useEffect(() => {
-    // Ждём загрузки профилей и разблокировки: модалка не должна висеть поверх замка
+    // Wait for profiles to load and for unlock: the modal must not sit on top of the lock screen
     if (isLoading || !lockReady || locked) return;
     const check = async () => {
-      // Флаг уже снят — показываем даже при размонтировании эффекта, иначе
-      // сообщение потеряется
+      // The flag is already cleared: show even if the effect unmounts, otherwise
+      // the message would be lost
       const ids = await takeLostEdits();
       if (ids.length === 0) return;
       const names = ids

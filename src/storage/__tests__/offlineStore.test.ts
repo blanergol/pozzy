@@ -84,7 +84,7 @@ describe('offlineStore (encrypted)', () => {
       d.pending.push(updateOp(7, 'changed'));
     });
     const keys = (multiSet.mock.calls[0][0] as [string, string][]).map(([k]) => k);
-    // meta (список, папки) не менялась — её не перешифровываем
+    // meta (list, folders) didn't change — it isn't re-encrypted
     expect(keys).toEqual([`pozzy.cache.${P}.queue`, `pozzy.cache.${P}.note.7`]);
 
     multiSet.mockClear();
@@ -124,7 +124,7 @@ describe('offlineStore (encrypted)', () => {
     expect(await takeLostEdits()).toEqual([P]);
     expect(await takeLostEdits()).toEqual([]);
 
-    // кэш снова работает с новым ключом
+    // the cache works again with the new key
     await updateOfflineData(P, (d) => {
       d.notesDetails['5'] = note(5, 'fresh');
     });
@@ -179,7 +179,7 @@ describe('offlineStore (encrypted)', () => {
     await saveOfflineData(P, data);
     expect(rawAsyncStorage()[legacyOfflineKey(P)]).toBeDefined();
 
-    // SecureStore снова работает — следующая запись полная, legacy удаляется
+    // SecureStore works again — the next write is a full one, legacy is removed
     secureStoreMock.__failNext('set', 0);
     data.pending.push(updateOp(2, 'NEW-EDIT', 'op-new'));
     await saveOfflineData(P, data);
@@ -193,7 +193,7 @@ describe('offlineStore (encrypted)', () => {
       d.notesDetails['1'] = note(1, 'a');
     });
     await clearOfflineData(P);
-    await saveOfflineData(P, data); // запоздавший синк
+    await saveOfflineData(P, data); // a late sync
     expect(Object.keys(rawAsyncStorage())).toEqual([]);
     expect(secureStoreMock.__store.has(secretKeys.serverDataKey(P))).toBe(false);
   });

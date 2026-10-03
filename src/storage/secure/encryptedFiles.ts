@@ -5,16 +5,16 @@ import { encryptedCache } from './encryptedCache';
 import { keySegment } from './secrets';
 
 /**
- * Файлы ожидающих выгрузки вложений хранятся зашифрованными ключом данных
- * сервера: `pending-attachments/<serverId>/<opId>.enc`. Имя исходного файла
- * есть только в зашифрованной очереди. Перед выгрузкой файл расшифровывается
- * во временный каталог кэша и удаляется сразу после попытки.
+ * Files of attachments pending upload are stored encrypted with the server's
+ * data key: `pending-attachments/<serverId>/<opId>.enc`. The original file name
+ * exists only in the encrypted queue. Before upload the file is decrypted
+ * into a temporary cache directory and deleted right after the attempt.
  *
- * Файл обрабатывается целиком в памяти JS — для очень больших вложений это
- * заметно по памяти, зато не нужен нативный модуль.
+ * The file is processed entirely in JS memory — for very large attachments this
+ * is noticeable memory-wise, but no native module is needed.
  */
 
-// documentDirectory читаем лениво: в jest нативный модуль недоступен
+// documentDirectory is read lazily: the native module is unavailable in jest
 export function pendingAttachmentsRoot(): string {
   return `${FileSystem.documentDirectory}pending-attachments/`;
 }
@@ -27,7 +27,7 @@ function uploadTempDir(): string {
   return `${FileSystem.cacheDirectory}pozzy-upload/`;
 }
 
-/** Префикс файлов, которые AttachmentsModal кладёт в кэш для открытия/шаринга. */
+/** Prefix of files that AttachmentsModal puts in the cache for opening/sharing. */
 export const SHARED_ATTACHMENT_PREFIX = 'poznote_';
 
 export function isEncryptedAttachmentUri(uri: string): boolean {
@@ -45,8 +45,8 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 /**
- * Зашифровать файл в каталог сервера. Запись проверяется обратным чтением;
- * при ошибке зашифрованная копия удаляется, исходник не трогается.
+ * Encrypt a file into the server's directory. The write is verified by reading it back;
+ * on error the encrypted copy is deleted and the original is left untouched.
  */
 export async function encryptAttachmentFile(
   serverId: string,
@@ -74,20 +74,20 @@ export async function encryptAttachmentFile(
 }
 
 export interface PreparedUpload {
-  /** Файл, который можно отдать клиенту API. */
+  /** File that can be handed to the API client. */
   uri: string;
-  /** Удалить временную расшифрованную копию (если она создавалась). */
+  /** Delete the temporary decrypted copy (if one was created). */
   cleanup: () => Promise<void>;
 }
 
 /**
- * Подготовить вложение к выгрузке.
- *   PreparedUpload — можно выгружать;
- *   null — файл безвозвратно нечитаем (его нет, конверт повреждён, ключа данных
- *          нет или проверка подлинности не прошла) — операцию нужно отбросить;
- *   исключение — временный сбой (чтение, нехватка места/памяти): файл и
- *          операцию сохраняем до следующего синка.
- * Legacy-файл открытым текстом отдаётся как есть.
+ * Prepare an attachment for upload.
+ *   PreparedUpload — ready to upload;
+ *   null — the file is irrecoverably unreadable (missing, envelope corrupted, no data
+ *          key, or authentication failed) — the operation must be dropped;
+ *   exception — a transient failure (read error, out of space/memory): the file and
+ *          the operation are kept until the next sync.
+ * A legacy plaintext file is returned as is.
  */
 export async function prepareAttachmentUpload(
   serverId: string,
@@ -120,7 +120,7 @@ export async function prepareAttachmentUpload(
   };
 }
 
-/** Удалить файлы ожидающих вложений сервера (каталог и legacy-файлы по списку). */
+/** Delete the server's pending attachment files (the directory and the listed legacy files). */
 export async function deletePendingAttachmentFiles(
   serverId: string,
   legacyUris: readonly string[] = [],
@@ -133,8 +133,8 @@ export async function deletePendingAttachmentFiles(
 }
 
 /**
- * Удалить legacy-файлы открытым текстом в корне pending-attachments, на
- * которые больше не ссылается ни одна очередь.
+ * Delete legacy plaintext files in the pending-attachments root that are
+ * no longer referenced by any queue.
  */
 export async function sweepLegacyAttachmentFiles(referenced: ReadonlySet<string>): Promise<void> {
   if (!FileSystem.documentDirectory) return;
@@ -154,9 +154,9 @@ export async function sweepLegacyAttachmentFiles(referenced: ReadonlySet<string>
 }
 
 /**
- * Удалить временные открытые копии: расшифрованные для выгрузки и скачанные
- * для открытия/шаринга. Вызывается при старте — к этому моменту системный
- * share sheet прошлой сессии давно закрыт.
+ * Delete temporary plaintext copies: those decrypted for upload and those downloaded
+ * for opening/sharing. Called at startup — by then the system share sheet of the
+ * previous session has long been closed.
  */
 export async function cleanupPlaintextTempFiles(): Promise<void> {
   const cacheDir = FileSystem.cacheDirectory;

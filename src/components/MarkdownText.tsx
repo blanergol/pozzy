@@ -4,8 +4,8 @@ import { ThemeColors } from '../theme/ThemeContext';
 import { parseBlocks, parseInline } from './markdownParser';
 
 /**
- * Рендерер markdown-подмножества для сообщений ассистента.
- * Парсинг — в ./markdownParser (чистые функции, покрыты тестами).
+ * Renderer for a markdown subset used in assistant messages.
+ * Parsing lives in ./markdownParser (pure functions, covered by tests).
  */
 
 const monoFont = Platform.select({ ios: 'Menlo', default: 'monospace' });

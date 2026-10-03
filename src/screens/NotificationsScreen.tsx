@@ -68,7 +68,7 @@ export default function NotificationsScreen({ navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      // Повторный фокус: без спиннера, а в пределах TTL — вообще без сети
+      // Re-focus: no spinner, and within the TTL no network request at all
       if (isFresh(lastLoadRef.current)) return;
       load(lastLoadRef.current.at === 0 ? 'initial' : 'silent');
     }, [load]),

@@ -28,9 +28,9 @@ async function deleteLocalFile(uri: string | undefined): Promise<void> {
 }
 
 /**
- * Поставить вложение в оффлайн-очередь: файл шифруется во внутренний каталог
- * (кэш DocumentPicker система может очистить), в очередь добавляется op 'attachment'.
- * noteId может быть временным отрицательным — разрешится при sync.
+ * Queue an attachment for offline upload: the file is encrypted into the internal directory
+ * (the system may purge the DocumentPicker cache), and an 'attachment' op is added to the queue.
+ * noteId may be a temporary negative id — it is resolved during sync.
  */
 export async function queueAttachmentUpload(
   profileId: string,
@@ -55,7 +55,7 @@ export async function queueAttachmentUpload(
   return op;
 }
 
-/** Ожидающие загрузки вложения заметки (временный id разрешается через aliases). */
+/** Attachments of a note pending upload (a temporary id is resolved through aliases). */
 export async function listPendingAttachments(
   profileId: string,
   noteId: number,
@@ -67,7 +67,7 @@ export async function listPendingAttachments(
   );
 }
 
-/** Удалить ожидающее вложение: убрать op из очереди и стереть локальный файл. */
+/** Remove a pending attachment: drop the op from the queue and delete the local file. */
 export async function removePendingAttachment(profileId: string, opId: string): Promise<void> {
   const data = await loadOfflineData(profileId);
   const op = data.pending.find((o) => o.opId === opId);
@@ -77,10 +77,10 @@ export async function removePendingAttachment(profileId: string, opId: string): 
 }
 
 /**
- * Выгрузить ожидающие вложения на сервер. Вызывается из syncNow ПОСЛЕ
- * note-операций, чтобы временные id уже разрешились в серверные.
- * Network-ошибка прерывает обработку (очередь остаётся на следующий sync);
- * прочие ошибки (4xx) удаляют операцию и файл, чтобы не зациклиться.
+ * Upload pending attachments to the server. Called from syncNow AFTER the
+ * note operations so that temporary ids have already been resolved to server ids.
+ * A network error aborts processing (the queue is kept for the next sync);
+ * other errors (4xx) remove the operation and the file to avoid looping forever.
  */
 export async function processAttachmentOps(
   client: PoznoteClient,
@@ -97,14 +97,14 @@ export async function processAttachmentOps(
       try {
         prepared = await prepareAttachmentUpload(profileId, op.opId, localUri, fileName);
       } catch {
-        // Временный локальный сбой (чтение, место на диске): файл и операцию
-        // сохраняем и прекращаем обработку до следующего синка
+        // Transient local failure (read error, disk space): keep the file and the
+        // operation and stop processing until the next sync
         await saveOfflineData(profileId, data);
         return { pushed, networkError: false };
       }
     }
     if (!prepared) {
-      // битая запись без файла или безвозвратно нечитаемый файл — вычищаем
+      // broken entry without a file or a permanently unreadable file — clean it up
       await deleteLocalFile(localUri);
       data.pending = data.pending.filter((o) => o.opId !== op.opId);
       continue;
@@ -118,11 +118,11 @@ export async function processAttachmentOps(
       pushed++;
     } catch (e) {
       if (isNetworkError(e)) {
-        // связь снова пропала — сохраняем очередь как есть и останавливаемся
+        // connection dropped again — save the queue as is and stop
         await saveOfflineData(profileId, data);
         return { pushed, networkError: true };
       }
-      // 4xx и прочие: убираем операцию и файл, чтобы не блокировать очередь
+      // 4xx and others: remove the operation and the file so they don't block the queue
     } finally {
       await prepared.cleanup();
     }
@@ -134,11 +134,11 @@ export async function processAttachmentOps(
 }
 
 /**
- * Миграция: legacy-файлы вложений открытым текстом (до 1.1) шифруются в
- * каталог сервера. Порядок: зашифровать с проверкой → записать новый путь в
- * очередь → только потом удалить исходник. Прерывание на любом шаге
- * безопасно: исходник остаётся, пока очередь на него ссылается.
- * Возвращает uri legacy-файлов, на которые очередь всё ещё ссылается.
+ * Migration: legacy plaintext attachment files (pre-1.1) are encrypted into the
+ * server directory. Order: encrypt with verification → write the new path to the
+ * queue → only then delete the original. Interruption at any step is safe:
+ * the original stays as long as the queue references it.
+ * Returns the uris of legacy files the queue still references.
  */
 export async function migrateLegacyAttachmentFiles(profileId: string): Promise<string[]> {
   if (Platform.OS === 'web') return [];
@@ -150,7 +150,7 @@ export async function migrateLegacyAttachmentFiles(profileId: string): Promise<s
     const exists = await FileSystem.getInfoAsync(legacyUri)
       .then((info) => info.exists)
       .catch(() => false);
-    if (!exists) continue; // файла нет — выгрузка и раньше отбросила бы операцию
+    if (!exists) continue; // no file — the upload would have dropped the operation anyway
     try {
       op.payload.localUri = await encryptAttachmentFile(profileId, op.opId, legacyUri);
       await saveOfflineDataStrict(profileId, data);

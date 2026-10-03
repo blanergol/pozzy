@@ -28,7 +28,7 @@ describe('secrets', () => {
     const calls = secureStoreMock.__calls;
     expect(calls.filter((c) => c.op === 'set').length).toBeGreaterThan(0);
     for (const call of calls) {
-      // 1 = AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY в моке
+      // 1 = AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY in the mock
       expect(call.options?.keychainAccessible).toBe(1);
       expect(call.options?.requireAuthentication).toBeUndefined();
     }

@@ -49,7 +49,7 @@ describe('buildMemoryContext', () => {
   it('свежего материала мало — повторная саммаризация не вызывается', async () => {
     mockFetchOnce('краткое саммари');
     await buildMemoryContext(settings, makeHistory(20));
-    // 21 сообщение: старых 9, покрыто 8 → новых 1 < SUMMARIZE_AFTER
+    // 21 messages: 9 old, 8 covered → 1 new < SUMMARIZE_AFTER
     const ctx = await buildMemoryContext(settings, makeHistory(21));
     expect(ctx.summary).toBe('краткое саммари');
     expect(global.fetch).toHaveBeenCalledTimes(1);

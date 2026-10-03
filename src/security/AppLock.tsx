@@ -19,18 +19,18 @@ const RELOCK_AFTER_MS = 30_000;
 const IS_NATIVE = Platform.OS === 'ios' || Platform.OS === 'android';
 
 interface AppLockContextValue {
-  /** Включена ли блокировка приложения. */
+  /** Whether app lock is enabled. */
   enabled: boolean;
-  /** Загрузка настройки завершена. */
+  /** The setting has finished loading. */
   isReady: boolean;
-  /** Доступна ли биометрия/код на устройстве. */
+  /** Whether biometrics/passcode is available on the device. */
   isAvailable: boolean;
-  /** Попытаться включить блокировку. false = недоступно на устройстве. */
+  /** Try to enable the lock. false = not available on the device. */
   enable: () => Promise<boolean>;
   disable: () => Promise<void>;
-  /** Сейчас заблокировано. */
+  /** Currently locked. */
   locked: boolean;
-  /** Запросить системную разблокировку (биометрия/код). */
+  /** Request system unlock (biometrics/passcode). */
   requestUnlock: () => Promise<void>;
 }
 
@@ -71,7 +71,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  // Повторная блокировка после сворачивания
+  // Re-lock after backgrounding
   useEffect(() => {
     if (!enabled) return;
     const sub = AppState.addEventListener('change', (state) => {
@@ -107,12 +107,12 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: 'Pozzy',
         cancelLabel: '✕',
-        disableDeviceFallback: false, // системный fallback на PIN/паттерн/пароль
+        disableDeviceFallback: false, // system fallback to PIN/pattern/password
         requireConfirmation: false,
       });
       if (result.success) setLocked(false);
     } catch {
-      // системный диалог недоступен — остаёмся заблокированными
+      // system dialog unavailable: stay locked
     }
   }, []);
 
@@ -130,7 +130,7 @@ export function useAppLock(): AppLockContextValue {
   return ctx;
 }
 
-/** Полноэкранная блокировка поверх приложения. */
+/** Full-screen lock overlay on top of the app. */
 export function AppLockScreen() {
   const { locked, requestUnlock } = useAppLock();
   const { colors } = useTheme();
@@ -139,7 +139,7 @@ export function AppLockScreen() {
   const promptedRef = useRef(false);
 
   useEffect(() => {
-    // автозапрос системного окна один раз на каждую блокировку
+    // auto-prompt the system dialog once per lock
     if (locked && !promptedRef.current) {
       promptedRef.current = true;
       requestUnlock();

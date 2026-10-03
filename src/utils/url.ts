@@ -1,10 +1,10 @@
 /**
- * Собирает абсолютную публичную ссылку из ответа share-эндпоинтов Poznote.
- * Сервер возвращает URL'ы в scheme-relative виде с хостом: //host/token,
- * //host/public_note.php?token=… — поэтому baseUrl конкатенировать нельзя
- * (получится дубль хоста). Предпочитаем формат public_note.php?token= —
- * это реальный файл, который маршрутизируется любым прокси (красивый путь
- * /{token} требует специального rewrite и не везде работает).
+ * Builds an absolute public link from the response of Poznote's share endpoints.
+ * The server returns URLs in scheme-relative form with a host: //host/token,
+ * //host/public_note.php?token=… — so baseUrl must not be concatenated
+ * (the host would be duplicated). We prefer the public_note.php?token= format —
+ * it is a real file routed by any proxy (the pretty path /{token} requires
+ * a special rewrite and does not work everywhere).
  */
 export function buildShareUrl(
   status: { url?: string; url_query?: string },

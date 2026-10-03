@@ -4,7 +4,7 @@ import { callChatCompletion } from '../../api/chat';
 import { PoznoteClient } from '../../api/client';
 import { AISettings } from '../../storage/settings';
 
-// Мокаем слой LLM: цикл агента тестируем на скриптованных ответах
+// Mock the LLM layer: the agent loop is tested against scripted replies
 jest.mock('../../api/chat', () => ({
   callChatCompletion: jest.fn(),
 }));
@@ -53,7 +53,7 @@ describe('runAgent', () => {
     expect(reply).toBe('нашёл');
     expect(onTool).toHaveBeenCalledWith('search_notes');
     expect(fakeClient.listNotes).toHaveBeenCalled();
-    // второй вызов содержит tool-результат в истории
+    // the second call has the tool result in its history
     const secondMessages = mockedCall.mock.calls[1][1];
     expect(secondMessages.some((m) => m.role === 'tool' && m.tool_call_id === 'call_1')).toBe(true);
   });
@@ -136,7 +136,7 @@ describe('runAgent', () => {
     mockedCall.mockResolvedValueOnce(textReply('финал'));
     const reply = await runAgent(settings, fakeClient, history);
     expect(reply).toBe('финал');
-    // 8 шагов с инструментами + финальный вызов без specs
+    // 8 steps with tools + the final call without specs
     expect(mockedCall).toHaveBeenCalledTimes(9);
     expect(mockedCall.mock.calls[8][2]).toBeUndefined();
   });

@@ -1,85 +1,85 @@
-# Ручная проверка: секреты в SecureStore и шифрование офлайн-данных
+# Manual checklist: secrets in SecureStore and encryption of offline data
 
-Автотесты (`npx jest src/storage src/data`) покрывают логику на моках. Этот чек-лист
-проверяет то, что моки не ловят: реальный Keychain/Keystore, реальный AsyncStorage,
-обновление поверх предыдущего релиза и бэкапы.
+The automated tests (`npx jest src/storage src/data`) cover the logic on mocks. This checklist
+covers what the mocks cannot catch: the real Keychain/Keystore, the real AsyncStorage,
+an update installed over the previous release, and backups.
 
-## Подготовка
+## Preparation
 
-- Обе сборки должны быть **debuggable**, иначе `run-as` не даст прочитать данные
-  приложения. Предыдущий релиз собираем из тега:
+- Both builds must be **debuggable**, otherwise `run-as` cannot read the app data.
+  Build the previous release from its tag:
 
   ```bash
-  git checkout v1.0.7 && npm ci && npx expo run:android   # старая версия
-  git checkout <ветка> && npm ci && npx expo prebuild --clean && npx expo run:android   # новая
+  git checkout v1.0.7 && npm ci && npx expo run:android   # old version
+  git checkout <branch> && npm ci && npx expo prebuild --clean && npx expo run:android   # new version
   ```
 
-  `prebuild --clean` нужен, чтобы плагин expo-secure-store прописал правила бэкапа
-  в `AndroidManifest.xml` (каталог `android/` генерируется и не хранится в git).
-- Используйте узнаваемые маркеры, по которым потом удобно искать открытый текст:
-  пароль `PWD-MARKER-1`, API-ключ `sk-MARKER-2`, текст заметки `NOTE-MARKER-3`,
-  офлайн-правка `EDIT-MARKER-4`, файл вложения с текстом `FILE-MARKER-5`.
+  `prebuild --clean` is required so that the expo-secure-store plugin writes the backup rules
+  into `AndroidManifest.xml` (the `android/` directory is generated and not kept in git).
+- Use recognizable markers that are easy to grep for as plain text later:
+  password `PWD-MARKER-1`, API key `sk-MARKER-2`, note text `NOTE-MARKER-3`,
+  offline edit `EDIT-MARKER-4`, an attachment file containing `FILE-MARKER-5`.
 
-Выгрузка AsyncStorage (Android):
+Dumping AsyncStorage (Android):
 
 ```bash
 adb exec-out run-as com.pozzy.mobile cat databases/RKStorage > RKStorage.db
 sqlite3 RKStorage.db "select key, substr(value, 1, 60) from catalystLocalStorage"
-grep -a -c -E "MARKER" RKStorage.db            # ожидаем 0
+grep -a -c -E "MARKER" RKStorage.db            # expected: 0
 adb shell run-as com.pozzy.mobile ls -R files/pending-attachments
 ```
 
-iOS Simulator: данные лежат в
-`$(xcrun simctl get_app_container booted com.pozzy.mobile data)/Library/Application Support/`,
-там же ищем маркеры: `grep -r -a MARKER "<путь>"`.
+iOS Simulator: the data lives in
+`$(xcrun simctl get_app_container booted com.pozzy.mobile data)/Library/Application Support/`;
+grep for the markers there: `grep -r -a MARKER "<path>"`.
 
-## 1. Главный сценарий: обновление с офлайн-правками
+## 1. Main scenario: upgrade with pending offline edits
 
-- [ ] Установить **v1.0.7**, добавить сервер с паролем `PWD-MARKER-1`, в настройках AI указать ключ `sk-MARKER-2`.
-- [ ] Открыть несколько заметок онлайн (попадут в кэш), в одну добавить `NOTE-MARKER-3`, дождаться синка.
-- [ ] Написать пару сообщений в AI-чате.
-- [ ] Включить авиарежим. Отредактировать заметку (`EDIT-MARKER-4`), создать новую, прикрепить файл `FILE-MARKER-5`.
-- [ ] Убедиться, что в старой версии маркеры видны в `RKStorage.db` (контроль методики).
-- [ ] Не выходя из авиарежима, установить новую сборку поверх (`npx expo run:android`), запустить.
-- [ ] Приложение открылось без повторного ввода пароля, офлайн-баннер на месте, правки и новая заметка видны.
-- [ ] Выключить авиарежим: правки, новая заметка и вложение ушли на сервер (проверить в веб-интерфейсе Poznote), дублей нет.
-- [ ] `grep -a -c MARKER RKStorage.db` → `0`. В `RKStorage` есть `pozzy.migration.v1 = 1`, значения `pozzy.cache.*` начинаются с `enc:v1:`, в `poznote.servers.v1` нет поля `password`, в `poznote.aiSettings.v1` нет `apiKey`.
-- [ ] В `files/pending-attachments/` не осталось файлов открытым текстом (пока вложение не выгружено, там только `<id>/<opId>.enc`).
-- [ ] История AI-чата и пользовательские шаблоны на месте после перезапуска.
+- [ ] Install **v1.0.7**, add a server with the password `PWD-MARKER-1`, set the key `sk-MARKER-2` in the AI settings.
+- [ ] Open a few notes online (they land in the cache), add `NOTE-MARKER-3` to one of them, wait for the sync.
+- [ ] Send a couple of messages in the AI chat.
+- [ ] Turn on airplane mode. Edit a note (`EDIT-MARKER-4`), create a new one, attach a file containing `FILE-MARKER-5`.
+- [ ] Confirm that in the old version the markers are visible in `RKStorage.db` (sanity check of the method).
+- [ ] Still in airplane mode, install the new build over it (`npx expo run:android`) and launch it.
+- [ ] The app opens without asking for the password again, the offline banner is there, the edits and the new note are visible.
+- [ ] Turn airplane mode off: the edits, the new note and the attachment reach the server (check in the Poznote web UI), no duplicates.
+- [ ] `grep -a -c MARKER RKStorage.db` → `0`. `RKStorage` contains `pozzy.migration.v1 = 1`, the `pozzy.cache.*` values start with `enc:v1:`, `poznote.servers.v1` has no `password` field, `poznote.aiSettings.v1` has no `apiKey`.
+- [ ] No plain-text files are left in `files/pending-attachments/` (until the attachment is uploaded there is only `<id>/<opId>.enc`).
+- [ ] The AI chat history and the custom templates are still there after a restart.
 
-## 2. Прерванная миграция
+## 2. Interrupted migration
 
-- [ ] Повторить шаги 1–4 сценария 1 на v1.0.7, поставить новую сборку и убить процесс сразу после появления сплэша (`adb shell am force-stop com.pozzy.mobile`), повторить 2–3 раза.
-- [ ] Запустить нормально: данные и офлайн-правки на месте, после выхода в онлайн всё синхронизировалось, маркеров в `RKStorage.db` нет.
+- [ ] Repeat steps 1–4 of scenario 1 on v1.0.7, install the new build and kill the process right after the splash screen appears (`adb shell am force-stop com.pozzy.mobile`); repeat 2–3 times.
+- [ ] Launch normally: data and offline edits are intact, everything syncs once online, no markers in `RKStorage.db`.
 
-## 3. Потеря ключа данных
+## 3. Lost data key
 
-- [ ] В новой сборке в авиарежиме сделать правку (очередь не пуста).
-- [ ] Удалить SecureStore: `adb shell run-as com.pozzy.mobile rm shared_prefs/SecureStore.xml`, перезапустить приложение.
-- [ ] Приложение не упало, после разблокировки один раз показано сообщение «Офлайн-изменения не восстановлены» с именем сервера; при следующем запуске сообщения нет.
-- [ ] Пароль сервера нужно ввести заново в настройках; после этого заметки загружаются с сервера.
-- [ ] Повторить без несинхронизированных правок: сообщения нет, кэш просто перезагружается.
+- [ ] In the new build, make an edit in airplane mode (the queue is not empty).
+- [ ] Delete the SecureStore: `adb shell run-as com.pozzy.mobile rm shared_prefs/SecureStore.xml`, restart the app.
+- [ ] The app does not crash; after unlocking, the message "Offline changes could not be restored" with the server name is shown once; it does not appear on the next launch.
+- [ ] The server password has to be entered again in Settings; after that, notes load from the server.
+- [ ] Repeat without unsynced edits: no message, the cache is simply reloaded.
 
-## 4. Бэкап и новая установка
+## 4. Backup and fresh install
 
-- [ ] Android: `adb shell dumpsys package com.pozzy.mobile | grep -i backup` — у приложения `fullBackupContent`/`dataExtractionRules` от secure-store.
-- [ ] `adb shell bmgr backupnow com.pozzy.mobile`, удалить приложение, установить заново, `adb shell bmgr restore com.pozzy.mobile` (или восстановить через Google-аккаунт на другом устройстве): приложение стартует как чистая установка, без падений.
-- [ ] iOS: удалить приложение, установить заново — онбординг, серверов нет, старый пароль не подтягивается (остатки Keychain удалены при первом старте).
+- [ ] Android: `adb shell dumpsys package com.pozzy.mobile | grep -i backup` — the app has `fullBackupContent`/`dataExtractionRules` from secure-store.
+- [ ] `adb shell bmgr backupnow com.pozzy.mobile`, uninstall the app, install it again, `adb shell bmgr restore com.pozzy.mobile` (or restore through a Google account on another device): the app starts as a clean install, no crashes.
+- [ ] iOS: uninstall and reinstall the app — onboarding, no servers, the old password is not picked up (Keychain leftovers are deleted on first start).
 
-## 5. Удаление сервера
+## 5. Removing a server
 
-- [ ] Добавить второй сервер, открыть на нём заметки, в авиарежиме поставить вложение в очередь.
-- [ ] Удалить профиль в настройках: в `RKStorage` пропали `pozzy.cache.<id>.*`, в `files/pending-attachments/` нет каталога `<id>`, пароль при повторном добавлении того же сервера не подставляется.
+- [ ] Add a second server, open notes on it, queue an attachment in airplane mode.
+- [ ] Delete the profile in Settings: `pozzy.cache.<id>.*` are gone from `RKStorage`, there is no `<id>` directory in `files/pending-attachments/`, and the password is not pre-filled when the same server is added again.
 
-## 6. Биометрия и фон
+## 6. Biometrics and background
 
-- [ ] Включить блокировку приложения, свернуть на 30+ секунд, разблокировать: данные читаются.
-- [ ] Добавить или удалить отпечаток в настройках системы: после разблокировки данные и пароли на месте (ключи не привязаны к биометрии).
-- [ ] Сообщение о потерянных правках (сценарий 3) не появляется поверх экрана блокировки, только после разблокировки.
+- [ ] Enable the app lock, send the app to the background for 30+ seconds, unlock: data is readable.
+- [ ] Add or remove a fingerprint in the system settings: after unlocking, data and passwords are intact (keys are not bound to biometrics).
+- [ ] The lost-edits message (scenario 3) does not appear on top of the lock screen, only after unlocking.
 
 ## 7. Web
 
-- [ ] `npm run web`: добавить сервер, работать с заметками — всё как раньше.
-- [ ] В DevTools → Application → Local Storage нет пароля, API-ключа, текста заметок и истории чата.
-- [ ] После перезагрузки страницы пароль нужно ввести заново (ожидаемое поведение).
-- [ ] Обновление с прошлой web-версии с несинхронизированными правками: правки в `localStorage` остаются до синка и исчезают после него.
+- [ ] `npm run web`: add a server, work with notes — everything works as before.
+- [ ] DevTools → Application → Local Storage contains no password, API key, note text or chat history.
+- [ ] After a page reload the password has to be entered again (expected behavior).
+- [ ] Upgrade from the previous web version with unsynced edits: the edits stay in `localStorage` until they are synced and disappear afterwards.

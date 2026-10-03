@@ -1,4 +1,4 @@
-/** Грубая зачистка markdown под озвучку/превью: остаётся читаемый текст. */
+/** Rough markdown stripping for speech/preview: only readable text remains. */
 export function markdownToPlain(text: string): string {
   return text
     .replace(/```[\s\S]*?```/g, ' ')

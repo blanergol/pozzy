@@ -1,6 +1,6 @@
 import { TranslationKey } from './ru';
 
-// Английский словарь. Ключи совпадают с ru.ts.
+// English dictionary. Keys match ru.ts.
 export const en: Record<TranslationKey, string> = {
   'nav.settings': 'Settings',
   'nav.notes': 'Notes',
@@ -235,6 +235,9 @@ export const en: Record<TranslationKey, string> = {
   'attach.pendingUpload': 'Pending upload',
   'attach.deletePendingTitle': 'Delete pending upload?',
   'attach.deletePendingMessage': 'The file will not be uploaded to the server',
+  'attach.sizeB': 'B',
+  'attach.sizeKB': 'KB',
+  'attach.sizeMB': 'MB',
 
   'folders.titleWorkspace': 'Folders · {workspace}',
   'folders.empty': 'No folders. Create the first one with the "+" button.',

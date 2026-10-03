@@ -1,7 +1,7 @@
 import { SecretBackend } from './types';
 
-// expo-secure-store на web недоступен: секреты держим только в памяти вкладки,
-// после перезагрузки пароль придётся ввести заново.
+// expo-secure-store is unavailable on web: secrets are kept only in the tab's memory,
+// after a reload the password has to be entered again.
 const memory = new Map<string, string>();
 
 export const secretBackend: SecretBackend = {

@@ -1,5 +1,5 @@
-// In-memory мок expo-file-system/legacy для тестов шифрования вложений.
-// Файлы хранятся как Buffer; каталоги — неявно, по префиксу пути.
+// In-memory mock of expo-file-system/legacy for attachment encryption tests.
+// Files are stored as Buffer; directories are implicit, by path prefix.
 const files = new Map();
 let failWrite = null;
 
@@ -49,13 +49,13 @@ module.exports = {
     }
     return [...names];
   },
-  // --- тестовые хелперы ---
+  // --- test helpers ---
   __files: files,
   __reset() {
     files.clear();
     failWrite = null;
   },
-  /** predicate(uri) → true: запись по этому пути падает. */
+  /** predicate(uri) → true: writing to this path fails. */
   __failWrites(predicate) {
     failWrite = predicate;
   },

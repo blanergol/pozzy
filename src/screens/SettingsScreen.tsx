@@ -78,7 +78,7 @@ export default function SettingsScreen({ navigation }: Props) {
     }
   };
 
-  // Форма сервера: null = скрыта, 'new' = новый, profile = редактирование
+  // Server form: null = hidden, 'new' = new server, profile = editing
   const [formState, setFormState] = useState<'hidden' | 'new' | ServerProfile>(
     profiles.length === 0 ? 'new' : 'hidden',
   );
@@ -90,14 +90,14 @@ export default function SettingsScreen({ navigation }: Props) {
   const [formError, setFormError] = useState<string | null>(null);
   const [profileActions, setProfileActions] = useState<ServerProfile | null>(null);
 
-  // Форма AI-чата (OpenAI-совместимый API)
+  // AI chat form (OpenAI-compatible API)
   const [aiEnabled, setAiEnabled] = useState(aiSettings.enabled);
   const [aiBaseUrl, setAiBaseUrl] = useState(aiSettings.baseUrl);
   const [aiApiKey, setAiApiKey] = useState(aiSettings.apiKey);
   const [aiModel, setAiModel] = useState(aiSettings.model);
   const [aiSaved, setAiSaved] = useState(false);
 
-  // Секции сервера
+  // Server sections
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [gitStatus, setGitStatus] = useState<GitSyncStatus | null>(null);
   const [backups, setBackups] = useState<BackupFile[] | null>(null);
@@ -107,7 +107,7 @@ export default function SettingsScreen({ navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const sectionsLoadedRef = useRef({ at: 0, version: -1 });
 
-  // Форма настройки Git Sync
+  // Git Sync settings form
   const [gitModalVisible, setGitModalVisible] = useState(false);
   const [gitProvider, setGitProvider] = useState<'github' | 'gitlab' | 'forgejo'>('github');
   const [gitRepo, setGitRepo] = useState('');
@@ -222,7 +222,7 @@ export default function SettingsScreen({ navigation }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileActions, activeProfile, profiles.length, removeProfile, t, dialog]);
 
-  // ===== Секции активного сервера =====
+  // ===== Active server sections =====
 
   const loadSections = useCallback(
     async (mode: 'initial' | 'refresh' = 'initial') => {
@@ -241,7 +241,7 @@ export default function SettingsScreen({ navigation }: Props) {
         if (sharedList.status === 'fulfilled') setShared(sharedList.value);
         sectionsLoadedRef.current = freshMark();
       } catch {
-        // секции вторичны — ошибки показываем молча
+        // sections are secondary: errors are swallowed silently
       } finally {
         setIsRefreshing(false);
       }
@@ -251,7 +251,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      // Повторный заход в настройки не дёргает 4 запроса, если данные свежие
+      // Re-entering settings doesn't fire 4 requests if the data is still fresh
       if (!isFresh(sectionsLoadedRef.current)) loadSections();
     }, [loadSections]),
   );
@@ -289,8 +289,8 @@ export default function SettingsScreen({ navigation }: Props) {
           dialog.alert(t('settings.testOk'), res.message ?? t('settings.testOkMessage'));
         } else {
           const serverError = res.error ?? res.message ?? t('settings.testFailUnknown');
-          // «Not Found» — стандартный ответ GitHub/Forgejo API при неверном
-          // owner/repo или токене без доступа к репозиторию
+          // "Not Found" is the standard GitHub/Forgejo API response for a wrong
+          // owner/repo or a token without access to the repository
           const hint = /not found/i.test(serverError) ? t('settings.testNotFoundHint') : '';
           dialog.alert(t('settings.testFail'), serverError + hint);
         }
@@ -328,7 +328,7 @@ export default function SettingsScreen({ navigation }: Props) {
         author_email: gitAuthorEmail.trim(),
       };
       if (gitProvider !== 'github') body.api_base = gitApiBase.trim();
-      // Пустой токен не отправляем — сервер оставит сохранённый
+      // Don't send an empty token: the server keeps the stored one
       if (gitToken.trim()) body.token = gitToken.trim();
       await client!.updateGitSyncConfig(body);
       setGitModalVisible(false);
@@ -344,7 +344,7 @@ export default function SettingsScreen({ navigation }: Props) {
         style: 'destructive',
         onPress: () =>
           runAction(async () => {
-            // DELETE-эндпоинта у API нет: пустые значения очищают поля на сервере
+            // The API has no DELETE endpoint: empty values clear the fields on the server
             await client!.updateGitSyncConfig({
               repo: '',
               token: '',
@@ -409,7 +409,7 @@ export default function SettingsScreen({ navigation }: Props) {
           />
         }
       >
-        {/* Серверы */}
+        {/* Servers */}
         {profiles.length > 0 ? (
           <>
             <Text style={styles.sectionTitle}>{t('settings.servers')}</Text>
@@ -449,7 +449,7 @@ export default function SettingsScreen({ navigation }: Props) {
           </>
         ) : null}
 
-        {/* Форма сервера */}
+        {/* Server form */}
         {formVisible ? (
           <>
             <Text style={styles.sectionTitle}>
@@ -530,7 +530,7 @@ export default function SettingsScreen({ navigation }: Props) {
           </>
         ) : null}
 
-        {/* Внешний вид */}
+        {/* Appearance */}
         <Text style={styles.sectionTitle}>{t('settings.appearance')}</Text>
         <View style={styles.card}>
           <View style={styles.themeRow}>
@@ -556,7 +556,7 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
         </View>
 
-        {/* Язык */}
+        {/* Language */}
         <Text style={styles.sectionTitle}>{t('settings.language')}</Text>
         <View style={styles.card}>
           <View style={styles.themeRow}>
@@ -582,7 +582,7 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
         </View>
 
-        {/* AI-чат */}
+        {/* AI chat */}
         <Text style={styles.sectionTitle}>{t('settings.aiSection')}</Text>
         <View style={styles.card}>
           <View style={styles.rowBetween}>
@@ -671,7 +671,7 @@ export default function SettingsScreen({ navigation }: Props) {
           ) : null}
         </View>
 
-        {/* Безопасность (только нативные платформы) */}
+        {/* Security (native platforms only) */}
         {Platform.OS !== 'web' && appLock.isReady ? (
           <>
             <Text style={styles.sectionTitle}>{t('settings.security')}</Text>
@@ -692,7 +692,7 @@ export default function SettingsScreen({ navigation }: Props) {
           </>
         ) : null}
 
-        {/* Секции активного сервера */}
+        {/* Active server sections */}
         {showSections ? (
           <>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -834,7 +834,7 @@ export default function SettingsScreen({ navigation }: Props) {
         onClose={() => setProfileActions(null)}
       />
 
-      {/* Настройка Git Sync */}
+      {/* Git Sync settings */}
       <Modal
         visible={gitModalVisible}
         transparent

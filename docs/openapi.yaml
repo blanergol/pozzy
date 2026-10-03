@@ -14,6 +14,8 @@ tags:
     description: Note snapshots (daily versions)
   - name: Reminders
     description: Note reminders and notifications
+  - name: Tasks
+    description: Tasks inside task list notes
   - name: Folders
     description: Folders management
   - name: Trash
@@ -33,7 +35,7 @@ tags:
   - name: System
     description: System information and utilities
   - name: Git Sync
-    description: Git synchronization (GitHub / Forgejo)
+    description: Git synchronization (GitHub / GitLab / Forgejo)
   - name: Users
     description: User profiles management
   - name: Public Tasks
@@ -49,9 +51,12 @@ security:
 components:
   securitySchemes:
     BasicAuth:
+      # Deliberate: Basic Auth is protected by brute-force throttling, HTTPS is required,
+      # and deployments can disable it entirely via OIDC_DISABLE_BASIC_AUTH.
+      # nosemgrep: yaml.openapi.security.use-of-basic-authentication.use-of-basic-authentication
       type: http
       scheme: basic
-      description: HTTP Basic Auth with global username/password. Include X-User-ID header for data endpoints.
+      description: HTTP Basic Auth with the profile's username and either its account password (include X-User-ID for data endpoints) or an app password created in Settings > App passwords (X-User-ID implied; API only, no admin routes, no account management, works on SSO-only instances). When two-factor authentication is on for the account, the account password is only accepted together with the current code in the X-Poznote-OTP header.
     BearerAuth:
       type: http
       scheme: bearer
@@ -69,11 +74,66 @@ components:
       required: true
       schema:
         type: integer
-      description: User profile ID to access. Required for Basic Auth and internal service-token data requests. OIDC Bearer JWT requests default to the token-linked profile when omitted. Account-access grants from the web UI do not allow non-admin API credentials to target another profile; use admin credentials or the internal service token for cross-profile API access. Use GET /users/profiles to list available profiles.
+      description: User profile ID to access. Required for account-password Basic Auth and internal service-token data requests. OIDC Bearer JWT and app-password requests default to their own profile when omitted. Account-access grants from the web UI do not allow non-admin API credentials to target another profile; use admin credentials or the internal service token for cross-profile API access. Use GET /users/profiles to list available profiles.
 
   schemas:
+    OrphanAttachmentsResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        users:
+          type: array
+          items:
+            type: object
+            properties:
+              user_id:
+                type: integer
+              total_files:
+                type: integer
+                description: Files in the account's local attachment folder
+              orphans_found:
+                type: integer
+              orphans_deleted:
+                type: integer
+                description: Always 0 for GET
+              files:
+                type: array
+                description: Names of the orphan files
+                items:
+                  type: string
+              error:
+                type: string
+                nullable: true
+    AppPassword:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 3
+        label:
+          type: string
+          example: "Chrome extension"
+        hint:
+          type: string
+          description: Prefix and first four characters of the secret
+          example: "pzn_2f7c"
+        created_at:
+          type: string
+          nullable: true
+        last_used_at:
+          type: string
+          nullable: true
+        expires_at:
+          type: string
+          nullable: true
+        expired:
+          type: boolean
     Note:
       type: object
+      description: >
+        GET /notes/{id} returns the note with its content. GET /notes lists
+        metadata only, without content or version.
       properties:
         id:
           type: integer
@@ -81,23 +141,26 @@ components:
         heading:
           type: string
           example: "My Note Title"
-        entrycontent:
+        content:
           type: string
+          description: Note body. Only returned by GET /notes/{id}.
           example: "# Hello World\n\nThis is my note content."
         tags:
           type: string
+          nullable: true
           example: "work,important"
         folder:
           type: string
           nullable: true
           example: "Projects"
+        folder_id:
+          type: integer
+          nullable: true
+          example: 12
         workspace:
           type: string
           example: "Personal"
         favorite:
-          type: integer
-          enum: [0, 1]
-        trash:
           type: integer
           enum: [0, 1]
         type:
@@ -109,6 +172,14 @@ components:
         updated:
           type: string
           format: date-time
+        version:
+          type: string
+          description: >
+            Opaque version token for optimistic concurrency. Returned by
+            GET /notes/{id} (also as an ETag header) and by PATCH /notes/{id}.
+            Pass it back in the PATCH body as if_version (or as an If-Match
+            header) to reject the write with a 409 if the note changed since.
+          example: "9b74c9897bac770ffc029102a200c5de"
 
     Folder:
       type: object
@@ -148,9 +219,21 @@ components:
         name:
           type: string
           example: "Personal"
-        note_count:
-          type: integer
-          example: 42
+        created:
+          type: string
+          example: "2026-01-15 09:30:00"
+        tags:
+          type: array
+          items:
+            type: string
+        color:
+          type: string
+          nullable: true
+          description: Stored color, a palette id or a custom hex.
+        color_hex:
+          type: string
+          nullable: true
+          description: Resolved color, null when the workspace has none.
 
     Attachment:
       type: object
@@ -223,6 +306,135 @@ components:
           items:
             type: integer
 
+    Notification:
+      type: object
+      description: >
+        A triggered reminder. Datetimes are UTC in "YYYY-MM-DD HH:MM:SS" format
+        with no timezone suffix, not ISO 8601.
+      properties:
+        id:
+          type: integer
+          description: Notification ID, used by /reminders/{id}/read and /reminders/{id}/dismiss.
+          example: 12
+        note_id:
+          type: integer
+          description: ID of the note this reminder belongs to.
+          example: 42
+        type:
+          type: string
+          example: reminder
+        message:
+          type: string
+          description: Reminder message, falls back to the note heading when none was given.
+          example: "Call the client back"
+        is_read:
+          type: integer
+          enum: [0, 1]
+        created:
+          type: string
+          description: UTC, "YYYY-MM-DD HH:MM:SS".
+          example: "2026-08-01 12:30:00"
+        trigger_at:
+          type: string
+          description: UTC, "YYYY-MM-DD HH:MM:SS".
+          example: "2026-08-10 07:00:00"
+        note_heading:
+          type: string
+          nullable: true
+          description: Heading of the linked note, null if the note was deleted or trashed.
+          example: "Client X"
+        recurrence:
+          type: string
+          nullable: true
+          description: Recurrence of the linked note's reminder, null when it does not repeat.
+          example: "1w"
+
+    Task:
+      type: object
+      description: >
+        One task of a task list note. Tasks are stored as a JSON array in the
+        note content; these are the normalized fields the API returns.
+      properties:
+        id:
+          type: number
+          description: Task identifier, unique inside the note.
+          example: 1754820000123.45
+        text:
+          type: string
+          example: Buy milk
+        completed:
+          type: boolean
+        important:
+          type: boolean
+          description: Sorts the task to the top of its list.
+        dueAt:
+          type: string
+          nullable: true
+          description: >
+            Local wall-clock due date, "YYYY-MM-DD", or "YYYY-MM-DDTHH:MM" when
+            a time is set. No timezone offset.
+          example: "2026-09-01T18:30"
+        dueReminder:
+          type: boolean
+          description: Whether a notification is scheduled for the due date.
+        dueReminderEmail:
+          type: boolean
+          description: >
+            Whether that reminder also sends an email. Only present once
+            configured; defaults to enabled otherwise.
+        dueRecurrence:
+          type: string
+          description: >
+            Repeat interval of the reminder, "<count><unit>" with unit
+            i/h/d/w/m/y. Only present when set.
+          example: "1w"
+        subtasks:
+          type: array
+          description: >
+            Subtasks of the task, one level deep. Only present when the task
+            has some. The per-task endpoints return them and keep them on
+            every write; the subtask endpoints add, rename, tick or remove
+            one at a time.
+          items:
+            $ref: '#/components/schemas/Subtask'
+
+    Subtask:
+      type: object
+      description: >
+        One checkable item under a task. It has no due date, reminder or
+        important flag, and ticking it does not complete its task.
+      properties:
+        id:
+          type: number
+          description: >
+            Unique inside the task. Null on a subtask that was written
+            through PATCH /notes/{id} without one; it gets an id the next
+            time a subtask endpoint writes to its task.
+          nullable: true
+          example: 1754820000456.78
+        text:
+          type: string
+        completed:
+          type: boolean
+
+    SubtaskWriteResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        note_id:
+          type: integer
+        task_id:
+          type: string
+        subtask:
+          $ref: '#/components/schemas/Subtask'
+        subtasks:
+          type: array
+          description: Every subtask of the task after the write.
+          items:
+            $ref: '#/components/schemas/Subtask'
+
     Error:
       type: object
       properties:
@@ -248,7 +460,11 @@ paths:
     get:
       tags: [Notes]
       summary: List notes
-      description: Get list of notes with optional filters
+      description: >
+        Get list of notes with optional filters. The response carries total,
+        the number of notes matching the filters, next to count, the size of
+        the page returned, so a truncated page is never mistaken for a
+        complete one. Page through a large workspace with limit and offset.
       parameters:
         - $ref: '#/components/parameters/UserIdHeader'
         - name: workspace
@@ -300,6 +516,19 @@ paths:
           schema:
             type: boolean
           description: Include folder information
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+          description: Maximum number of notes to return. Omit to return them all.
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+          description: Number of notes to skip, for paging through a limit
       responses:
         '200':
           description: List of notes
@@ -314,6 +543,26 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Note'
+                  count:
+                    type: integer
+                    description: Number of notes in this page
+                  total:
+                    type: integer
+                    description: Number of notes matching the filters, ignoring limit/offset
+                  offset:
+                    type: integer
+                  limit:
+                    type: integer
+                    nullable: true
+                  has_more:
+                    type: boolean
+                    description: True when notes remain after this page
+        '400':
+          description: Invalid limit, offset or date filter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       tags: [Notes]
       summary: Create a new note
@@ -345,13 +594,24 @@ paths:
                   example: 12
                 folder:
                   type: string
-                  description: Target folder name (alternative to folder_id)
+                  description: >
+                    Target folder path (alternative to folder_id). Missing
+                    segments are created. A name with no slash matches an
+                    existing folder at any depth when exactly one folder of the
+                    workspace carries it; when several do, the request is
+                    refused with 409 ambiguous_folder_name and the candidates.
+                    'folder_name' is accepted as an older spelling of the same
+                    parameter.
                 type:
                   type: string
                   enum: [note, markdown, tasklist]
                   default: note
                 tags:
-                  type: string
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items:
+                        type: string
                   example: "tag1,tag2"
       responses:
         '201':
@@ -397,8 +657,14 @@ paths:
                 properties:
                   success:
                     type: boolean
-                  note:
-                    $ref: '#/components/schemas/Note'
+                  id:
+                    type: integer
+                  heading:
+                    type: string
+                  workspace:
+                    type: string
+        '404':
+          description: Note not found
 
   /notes/search:
     get:
@@ -448,10 +714,71 @@ paths:
                 properties:
                   success:
                     type: boolean
-                  notes:
+                  query:
+                    type: string
+                  count:
+                    type: integer
+                  results:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Note'
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        heading:
+                          type: string
+                        tags:
+                          type: string
+                        folder:
+                          type: string
+                          nullable: true
+                        folder_id:
+                          type: integer
+                          nullable: true
+                        workspace:
+                          type: string
+                        excerpt:
+                          type: string
+                          description: Plain-text extract of the note content
+                        updated:
+                          type: string
+                        created:
+                          type: string
+
+  /notes/search/ids:
+    get:
+      tags: [Notes]
+      summary: Ids of the notes matching every word
+      description: Ids of every note whose title, tags or content contain all the words of q, in any order, ignoring case and accents. A tasklist matches on its task labels. No limit, every match is returned.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Words to find
+        - name: workspace
+          in: query
+          schema:
+            type: string
+          description: Restrict search to a workspace
+      responses:
+        '200':
+          description: Matching note ids
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  ids:
+                    type: array
+                    items:
+                      type: integer
+        '400':
+          description: Missing q
 
   /notes/with-attachments:
     get:
@@ -467,6 +794,26 @@ paths:
         '200':
           description: List of notes that have attachments
 
+  /notes/templates:
+    get:
+      tags: [Notes]
+      summary: List notes usable as templates
+      description: |
+        Notes the "/template" slash command can insert: HTML and Markdown notes
+        kept in a folder named "Templates" (sub-folders included) or in a
+        workspace named "Templates". The name is matched case-insensitively,
+        in English or in the interface language.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: workspace
+          in: query
+          description: Only consider the "Templates" folders of this workspace
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of template notes (id, heading, type, workspace, folder_id, folder, icon, icon_color)
+
   /notes/{id}:
     get:
       tags: [Notes]
@@ -481,6 +828,11 @@ paths:
       responses:
         '200':
           description: Note details
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Version token, same value as note.version
           content:
             application/json:
               schema:
@@ -502,6 +854,15 @@ paths:
           required: true
           schema:
             type: integer
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+          description: >
+            Version token for optimistic concurrency (alternative to the
+            if_version body field). The write is rejected with a 409 if the
+            note changed since that version.
       requestBody:
         content:
           application/json:
@@ -513,14 +874,81 @@ paths:
                 content:
                   type: string
                 tags:
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items:
+                        type: string
+                workspace:
                   type: string
+                  description: >
+                    Moves the note to this workspace, keeping its id and its
+                    history. The note lands at the root of the destination
+                    unless the same request also names a folder of it, since
+                    its current folder belongs to the workspace it leaves.
+                    (The workspace query parameter is only a lookup filter.)
                 folder_id:
                   type: integer
                   nullable: true
-                  description: ID of the folder (optional)
+                  description: >
+                    ID of the folder (optional). When the request also changes
+                    the workspace, it must be a folder of the destination.
+                folder:
+                  type: string
+                  description: >
+                    Target folder path (alternative to folder_id). Missing
+                    segments are created, an empty string moves the note to
+                    the workspace root, and folder_id wins when both are sent.
+                    A name with no slash matches an existing folder at any
+                    depth when exactly one folder of the workspace carries it;
+                    when several do, the request is refused with 409
+                    ambiguous_folder_name and the candidates.
+                if_version:
+                  type: string
+                  description: >
+                    Version token previously returned by GET or PATCH. When
+                    set, the write only succeeds if the note still has that
+                    version; otherwise a 409 is returned with the current
+                    version and content so the caller can merge and retry.
       responses:
         '200':
-          description: Note updated
+          description: Note updated (response includes the new version token)
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: New version token, same value as note.version
+        '409':
+          description: Version conflict, the note was modified since if_version
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                  code:
+                    type: string
+                    example: version_conflict
+                  current:
+                    type: object
+                    properties:
+                      version:
+                        type: string
+                      updated:
+                        type: string
+                        format: date-time
+                      heading:
+                        type: string
+                      content:
+                        type: string
+        '423':
+          description: >
+            Note is locked for editing by another user or session. Without an
+            editor_session_id, only a lock held by someone else blocks the write.
     delete:
       tags: [Notes]
       summary: Delete a note (move to trash)
@@ -540,6 +968,8 @@ paths:
       responses:
         '200':
           description: Note deleted
+        '423':
+          description: Note is being edited by another user or session
 
   /notes/{id}/restore:
     post:
@@ -629,6 +1059,48 @@ paths:
                   new_note_id:
                     type: integer
 
+  /notes/reorder:
+    post:
+      tags: [Notes]
+      summary: Reorder a note before/after another note
+      description: >
+        Manual drag-and-drop order. The note lands in the target note's folder
+        (or at the root), every note there is renumbered, and that folder
+        switches to the manual sort so the position sticks. For a root note
+        the global note sort setting becomes manual; folders following the
+        global default keep their current ordering.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note_id, target_note_id, position]
+              properties:
+                note_id:
+                  type: integer
+                  description: Note to move
+                target_note_id:
+                  type: integer
+                  description: Note used as anchor (same workspace)
+                position:
+                  type: string
+                  enum: [before, after]
+                workspace:
+                  type: string
+                  description: Workspace check (must match target note)
+      responses:
+        '200':
+          description: Note reordered
+        '400':
+          description: Invalid parameters or notes in different workspaces
+        '404':
+          description: Note not found
+        '409':
+          description: A note with the same title already exists in the destination folder
+
   /notes/{id}/folder:
     post:
       tags: [Notes]
@@ -674,6 +1146,29 @@ paths:
         '200':
           description: Note moved to root
 
+  /notes/{id}/archive:
+    post:
+      tags: [Notes]
+      summary: Archive a note into the Archives workspace
+      description: >
+        Moves the note to the "Archives" workspace, creating it on first use and
+        mirroring the note's folder path inside it. The source folders are left
+        untouched, and the note's `updated` date is preserved.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Note archived (or already in the Archives workspace)
+        '404':
+          description: Note not found
+        '409':
+          description: A note with the same title is already archived in the target folder
+
   /notes/{id}/beacon:
     post:
       tags: [Notes]
@@ -699,6 +1194,101 @@ paths:
       responses:
         '200':
           description: Note saved
+
+  /graph:
+    get:
+      tags: [Notes]
+      summary: Get the note-link graph
+      description: >
+        Returns the graph used by the graph view: one node per non-trashed note
+        (note, markdown and tasklist types) and one edge per link between two
+        notes. `folders` lists the folders holding at least one of those notes,
+        directly or through a subfolder. A node or a folder whose icon was
+        customised carries it in `icon` and `icon_color`. With `limit` the
+        graph is cut down to the most recently modified notes, and `total`
+        tells how many notes it holds without a limit.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: workspace
+          in: query
+          required: false
+          description: Restrict the graph to one workspace.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Keep only that many notes, the most recently modified ones. Links to a note left out are dropped. Omit it, or pass 0, for every note.
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Nodes and edges of the note graph
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  total:
+                    type: integer
+                    description: Number of notes in the graph without a limit; greater than the length of `nodes` when some were left out
+                  nodes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        title:
+                          type: string
+                        folder:
+                          type: string
+                        folder_id:
+                          type: integer
+                          nullable: true
+                        type:
+                          type: string
+                        favorite:
+                          type: boolean
+                        icon:
+                          type: string
+                          nullable: true
+                          description: Lucide class of the customised icon (the default icon when only its color was changed), null when nothing was customised
+                        icon_color:
+                          type: string
+                          nullable: true
+                  edges:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: integer
+                        target:
+                          type: integer
+                  folders:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        parent_id:
+                          type: integer
+                          nullable: true
+                        icon:
+                          type: string
+                          nullable: true
+                          description: Lucide class of the customised icon (`lucide-folder` when only its color was changed), null when nothing was customised
+                        icon_color:
+                          type: string
+                          nullable: true
 
   /notes/{id}/backlinks:
     get:
@@ -745,6 +1335,140 @@ paths:
         '200':
           description: Icon updated
 
+  /notes/{id}/offline:
+    put:
+      tags: [Notes]
+      summary: Keep a note offline whatever its date, or stop
+      description: >
+        Keeps the note in the browsers where the account is used, with all
+        its attachments (see /offline/manifest), or stops doing so.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [offline]
+              properties:
+                offline:
+                  type: boolean
+                  example: true
+      responses:
+        '200':
+          description: Offline state updated
+        '400':
+          description: Invalid note ID, or missing/invalid "offline" boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /notes/{id}/pinned:
+    put:
+      tags: [Notes]
+      summary: Pin or unpin a note
+      description: Pins a note so it stays at the top of the note list, or unpins it.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pinned]
+              properties:
+                pinned:
+                  type: boolean
+                  example: true
+      responses:
+        '200':
+          description: Pinned state updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                  pinned:
+                    type: boolean
+        '400':
+          description: Invalid note ID, or missing/invalid "pinned" boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Note not found or in trash
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /notes/{id}/kanban-completed:
+    post:
+      tags: [Notes]
+      summary: Set the Kanban completed state of a note
+      description: >
+        Marks a note as completed on the kanban board, or reopens it. Only the
+        completion flag changes: the note content and its updated timestamp are
+        left untouched.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [completed]
+              properties:
+                completed:
+                  type: boolean
+                  example: true
+      responses:
+        '200':
+          description: Kanban completed state updated
+        '400':
+          description: Missing or non-boolean "completed" field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /notes/{id}/color:
     put:
       tags: [Notes]
@@ -779,22 +1503,6 @@ paths:
           description: Invalid color value
         '404':
           description: Note not found
-
-  /notes/{id}/create-template:
-    post:
-      tags: [Notes]
-      summary: Create a template from a note
-      description: Copies the note into the "Templates" folder of its workspace (created if missing)
-      parameters:
-        - $ref: '#/components/parameters/UserIdHeader'
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        '201':
-          description: Template created
 
   /notes/{id}/convert:
     post:
@@ -863,8 +1571,10 @@ paths:
       responses:
         '200':
           description: Lock acquired
-        '409':
-          description: Note is locked by another session
+        '423':
+          description: >
+            Note is locked by another session. The body carries the current
+            lock (holder_username, expires_at).
 
   /notes/{id}/lock/heartbeat:
     post:
@@ -889,8 +1599,12 @@ paths:
       responses:
         '200':
           description: Lock refreshed
-        '409':
-          description: Note is locked by another session
+        '404':
+          description: Note not found
+        '423':
+          description: >
+            Note is locked by another session. The body carries the current
+            lock (holder_username, expires_at).
 
   /notes/{id}/lock/release:
     post:
@@ -915,6 +1629,139 @@ paths:
       responses:
         '200':
           description: Lock released (or was not held)
+        '404':
+          description: Note not found
+
+  # ==================
+  # Offline Copies Endpoints
+  # ==================
+  /offline/manifest:
+    get:
+      tags: [Notes]
+      summary: Notes kept offline, with their versions
+      description: |
+        Feeds the browser's offline copies (js/offline-sync.js). Returns the
+        notes modified in the last `days` days (user setting
+        `offline_notes_days`, default 5, 0 = off), the favorites and the
+        notes and folders marked "Keep offline", within `limits` (the
+        recent ones dropped first), without content, with their version
+        token, why each is kept (`kept`: note, folder, favorite or
+        recent), and the folders of those notes.
+        `limits` gives the limits in force. Answers 304 to
+        a matching If-None-Match. Refused (403, `offline_unavailable`) on an
+        account the session does not own.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  user:
+                    type: object
+                  days:
+                    type: integer
+                  limits:
+                    type: object
+                    properties:
+                      notes:
+                        type: integer
+                      text_mb:
+                        type: integer
+                      picture_mb:
+                        type: integer
+                      pictures:
+                        type: integer
+                      pictures_mb:
+                        type: integer
+                  workspaces:
+                    type: array
+                    items:
+                      type: string
+                  folders:
+                    type: array
+                    items:
+                      type: object
+                  notes:
+                    type: array
+                    items:
+                      type: object
+        '304':
+          description: Unchanged since the ETag sent
+        '403':
+          description: Offline copies are only kept for the account's owner
+
+  /offline/list:
+    get:
+      tags: [Notes]
+      summary: Notes and folders kept offline, with why
+      description: |
+        Feeds the Offline page (offline_notes.php). The notes of the
+        manifest with why each is kept (`reason`: note, folder, favorite
+        or recent) and their folder path, and the folders kept whole
+        (`is_direct` when marked "Keep offline" themselves, otherwise kept
+        through a parent) with their number of notes kept offline. Refused
+        (403, `offline_unavailable`) on an account the session does not own.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: workspace
+          in: query
+          required: false
+          description: Only this workspace (every workspace when omitted)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Notes and folders kept offline
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  days:
+                    type: integer
+                  notes:
+                    type: array
+                    items:
+                      type: object
+                  folders:
+                    type: array
+                    items:
+                      type: object
+        '403':
+          description: Offline copies are only kept for the account's owner
+
+  /offline/notes:
+    get:
+      tags: [Notes]
+      summary: Full content of up to 50 notes, for the offline copies
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: ids
+          in: query
+          required: true
+          description: Comma-separated note IDs (max 50)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Notes with content, version and attachment list
+        '400':
+          description: Missing or too many ids
+        '403':
+          description: Offline copies are only kept for the account's owner
 
   # ==================
   # Snapshots Endpoints
@@ -1013,28 +1860,603 @@ paths:
   # ==================
   # Reminders Endpoints
   # ==================
-  /notes/{id}/reminder:
+  /tasks:
     get:
-      tags: [Reminders]
-      summary: Get reminder for a note
+      tags: [Tasks]
+      summary: List the tasks of every task list note
+      description: >
+        Aggregates the tasks of all non-trashed tasklist notes, as used by the
+        tasks page (list and calendar views).
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: workspace
+          in: query
+          required: false
+          description: Restrict the result to one workspace.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Task list notes with their decoded tasks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  notes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        heading:
+                          type: string
+                        folder:
+                          type: string
+                        folder_id:
+                          type: integer
+                          nullable: true
+                        workspace:
+                          type: string
+                        updated:
+                          type: string
+                        favorite:
+                          type: boolean
+                        tasks:
+                          type: array
+                          items:
+                            $ref: '#/components/schemas/Task'
+                  checklists:
+                    type: array
+                    description: >
+                      Checklist items found in regular notes (HTML checklists
+                      and markdown "- [ ]" task lists), grouped by note. A
+                      task id here is the item's position in the note source
+                      (checkbox ordinal for HTML notes, 0-based line number
+                      for markdown notes), not a task id: these items are
+                      toggled by rewriting the note content through
+                      PATCH /notes/{id}, not through the per-task endpoints.
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        heading:
+                          type: string
+                        folder:
+                          type: string
+                        folder_id:
+                          type: integer
+                          nullable: true
+                        workspace:
+                          type: string
+                        updated:
+                          type: string
+                        favorite:
+                          type: boolean
+                        type:
+                          type: string
+                          enum: [note, markdown]
+                        tasks:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: integer
+                                description: Position of the item in the note source
+                              text:
+                                type: string
+                              completed:
+                                type: boolean
+
+  /notes/{id}/tasks:
+    get:
+      tags: [Tasks]
+      summary: List the tasks of one note
+      description: >
+        Returns the tasks of a single task list note. Use it to obtain a task
+        id before updating or deleting that task.
       parameters:
         - $ref: '#/components/parameters/UserIdHeader'
         - name: id
           in: path
           required: true
+          description: Note ID of a tasklist note.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The note's tasks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  note_id:
+                    type: integer
+                    example: 42
+                  heading:
+                    type: string
+                    example: Groceries
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+        '400':
+          description: Invalid note ID, or the note is not a task list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Note not found or in trash
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags: [Tasks]
+      summary: Add a task to a note
+      description: >
+        Appends one task to a task list note. The request carries only the new
+        task, so a client never has to read the list and send it back, and a
+        concurrent edit cannot be lost. The note itself stores its tasks as a
+        single JSON array, which the server rewrites, so the work done per call
+        grows with the length of the list. When reminder is true, the matching
+        notification is scheduled from due_at automatically.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          description: Note ID of a tasklist note.
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                  example: Buy milk
+                due_at:
+                  type: string
+                  nullable: true
+                  description: >
+                    Local wall-clock due date, "YYYY-MM-DD" or
+                    "YYYY-MM-DDTHH:MM". Resolved through the user's timezone.
+                  example: "2026-09-01T18:30"
+                reminder:
+                  type: boolean
+                  description: >
+                    Raise a notification on the due date. Requires due_at.
+                    A date without a time reminds at 09:00.
+                reminder_email:
+                  type: boolean
+                  description: Also send an email. Ignored when SMTP is not configured.
+                recurrence:
+                  type: string
+                  nullable: true
+                  description: Repeat interval, "<count><unit>" with unit i/h/d/w/m/y.
+                  example: "1w"
+                important:
+                  type: boolean
+                completed:
+                  type: boolean
+      responses:
+        '200':
+          description: The created task
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  note_id:
+                    type: integer
+                  task:
+                    $ref: '#/components/schemas/Task'
+        '400':
+          description: Missing text, invalid due_at/recurrence, or not a task list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Storage quota exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Note not found or in trash
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /notes/{id}/tasks/{taskId}:
+    patch:
+      tags: [Tasks]
+      summary: Update one task
+      description: >
+        Updates a single task; only the provided fields change. Completing a
+        task clears its pending reminder, and setting due_at to null clears the
+        due date and its reminder.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          description: Note ID of a tasklist note.
+          schema:
+            type: integer
+        - name: taskId
+          in: path
+          required: true
+          description: Task id as it appears in the note content, e.g. "1754820000123.45".
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                completed:
+                  type: boolean
+                important:
+                  type: boolean
+                due_at:
+                  type: string
+                  nullable: true
+                  description: New due date, or null to clear it.
+                reminder:
+                  type: boolean
+                reminder_email:
+                  type: boolean
+                recurrence:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: The updated task
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  note_id:
+                    type: integer
+                  task:
+                    $ref: '#/components/schemas/Task'
+        '400':
+          description: Invalid body, due_at or recurrence, or not a task list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Note or task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [Tasks]
+      summary: Delete one task
+      description: Removes a task from a task list note, along with its pending reminder.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          description: Note ID of a tasklist note.
+          schema:
+            type: integer
+        - name: taskId
+          in: path
+          required: true
+          description: Task id as it appears in the note content.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Task deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  note_id:
+                    type: integer
+                  task_id:
+                    type: string
+        '404':
+          description: Note or task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /notes/{id}/tasks/{taskId}/subtasks:
+    post:
+      tags: [Tasks]
+      summary: Add a subtask to a task
+      description: >
+        Appends one subtask to a task. Subtasks go one level deep and carry a
+        text and a completion flag only.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          description: Note ID of a tasklist note.
+          schema:
+            type: integer
+        - name: taskId
+          in: path
+          required: true
+          description: Task id as it appears in the note content, e.g. "1754820000123.45".
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                completed:
+                  type: boolean
+                  description: Whether the subtask starts out done.
+      responses:
+        '200':
+          description: The created subtask and the subtasks of the task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubtaskWriteResult'
+        '400':
+          description: Missing text, invalid body, or not a task list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Storage quota exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Note or task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '423':
+          description: The note is being edited by someone else
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /notes/{id}/tasks/{taskId}/subtasks/{subtaskId}:
+    patch:
+      tags: [Tasks]
+      summary: Update one subtask
+      description: >
+        Renames a subtask, ticks or unticks it; only the provided fields
+        change. The completion of its task is never touched.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          description: Note ID of a tasklist note.
+          schema:
+            type: integer
+        - name: taskId
+          in: path
+          required: true
+          description: Task id as it appears in the note content, e.g. "1754820000123.45".
+          schema:
+            type: string
+        - name: subtaskId
+          in: path
+          required: true
+          description: Subtask id as the task's subtasks array gives it, e.g. "1754820000456.78".
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: At least one of the two fields is required.
+              properties:
+                text:
+                  type: string
+                completed:
+                  type: boolean
+      responses:
+        '200':
+          description: The updated subtask and the subtasks of the task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubtaskWriteResult'
+        '400':
+          description: Empty text, neither field given, invalid body, or not a task list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Note, task or subtask not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '423':
+          description: The note is being edited by someone else
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [Tasks]
+      summary: Delete one subtask
+      description: Removes a subtask from its task.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          description: Note ID of a tasklist note.
+          schema:
+            type: integer
+        - name: taskId
+          in: path
+          required: true
+          description: Task id as it appears in the note content, e.g. "1754820000123.45".
+          schema:
+            type: string
+        - name: subtaskId
+          in: path
+          required: true
+          description: Subtask id as the task's subtasks array gives it, e.g. "1754820000456.78".
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Subtask deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  note_id:
+                    type: integer
+                  task_id:
+                    type: string
+                  subtask_id:
+                    type: string
+                  subtasks:
+                    type: array
+                    description: The subtasks the task still has.
+                    items:
+                      $ref: '#/components/schemas/Subtask'
+        '404':
+          description: Note, task or subtask not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '423':
+          description: The note is being edited by someone else
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /notes/{id}/reminder:
+    get:
+      tags: [Reminders]
+      summary: Get reminder for a note
+      description: >
+        Returns the reminder set on a note. reminder_at is null when the note
+        has no reminder.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          description: Note ID (not a notification ID).
           schema:
             type: integer
       responses:
         '200':
           description: Reminder details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  note_id:
+                    type: integer
+                    example: 42
+                  reminder_at:
+                    type: string
+                    nullable: true
+                    description: UTC, "YYYY-MM-DD HH:MM:SS". Null when no reminder is set.
+                    example: "2026-08-10 07:00:00"
+                  email_enabled:
+                    type: boolean
+                  recurrence:
+                    type: string
+                    nullable: true
+                    description: Recurrence code, null when the reminder does not repeat.
+                    example: "1w"
+        '400':
+          description: Invalid note ID (not numeric)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Note not found or in trash
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       tags: [Reminders]
       summary: Set a reminder on a note
+      description: >
+        Sets or replaces the reminder on a note. Any existing non-dismissed
+        reminder for that note is removed first, so this endpoint is also how
+        you modify a reminder.
       parameters:
         - $ref: '#/components/parameters/UserIdHeader'
         - name: id
           in: path
           required: true
+          description: Note ID (not a notification ID).
           schema:
             type: integer
       requestBody:
@@ -1048,97 +2470,461 @@ paths:
                 reminder_at:
                   type: string
                   format: date-time
-                  description: When to trigger the reminder (ISO 8601)
+                  description: >
+                    When to trigger the reminder (ISO 8601). Converted to UTC
+                    for storage, so include an explicit offset (for example
+                    2026-08-10T09:00:00+02:00) to avoid ambiguity.
+                  example: "2026-08-10T09:00:00+02:00"
                 message:
                   type: string
-                  description: Optional reminder message
+                  description: Optional reminder message. Defaults to the note heading.
+                  example: "Call the client back"
                 email_enabled:
                   type: boolean
-                  description: Also send an email (if email is configured)
+                  description: >
+                    Also send an email. Silently downgraded to false unless SMTP
+                    is configured and the current user has a valid email address,
+                    so check email_enabled in the response to know what was applied.
+                recurrence:
+                  type: string
+                  nullable: true
+                  pattern: '^[1-9][0-9]{0,2}[ihdwmy]$'
+                  description: >
+                    Repeat interval as `<count><unit>`, count 1-999, unit
+                    i = minutes, h = hours, d = days, w = weeks, m = months,
+                    y = years. For example "30i", "1h", "1d", "2w", "3m", "1y".
+                    Omit it, or send null or "none", for a one-off reminder;
+                    any other value is rejected with a 400.
+
+
+                    Recurring reminders are re-armed on dismissal, not by a
+                    background job: the next occurrence is scheduled when the
+                    notification is dismissed via /reminders/{id}/dismiss or
+                    /reminders/dismiss-all. A client that never dismisses
+                    notifications will never see the reminder repeat.
+                  example: "1w"
       responses:
         '200':
           description: Reminder set
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  note_id:
+                    type: integer
+                    example: 42
+                  reminder_at:
+                    type: string
+                    description: The stored trigger time, UTC "YYYY-MM-DD HH:MM:SS".
+                    example: "2026-08-10 07:00:00"
+                  email_enabled:
+                    type: boolean
+                    description: Whether email was actually enabled, see the request field.
+                  recurrence:
+                    type: string
+                    nullable: true
+                    example: "1w"
+        '400':
+          description: >
+            Invalid note ID, malformed JSON body, missing reminder_at,
+            unparseable reminder_at, or invalid recurrence format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Note not found or in trash
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     delete:
       tags: [Reminders]
       summary: Remove a reminder from a note
+      description: >
+        Clears the reminder and its pending notification. This endpoint does not
+        check that the note exists: it returns 200 for an unknown note ID, so the
+        response is not proof that a note was found.
       parameters:
         - $ref: '#/components/parameters/UserIdHeader'
         - name: id
           in: path
           required: true
+          description: Note ID (not a notification ID).
           schema:
             type: integer
       responses:
         '200':
           description: Reminder removed
+        '404':
+          description: Note not found or in trash
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  note_id:
+                    type: integer
+                    example: 42
+        '400':
+          description: Invalid note ID (not numeric)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /notes/{id}/task-reminder:
+    post:
+      tags: [Reminders]
+      summary: Set a reminder on one task of a task list
+      description: >
+        Sets or replaces the reminder of a single task inside a tasklist note.
+        Any existing non-dismissed reminder for that task is removed first.
+        This materializes the task's dueReminder flag as a scheduled
+        notification; the task's own dueAt/dueReminder fields live in the note
+        content. Task-level reminders are independent of the note-level
+        reminder and are never cleared by it.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          description: Note ID of a tasklist note.
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_id, reminder_at]
+              properties:
+                task_id:
+                  type: string
+                  description: Task id as it appears in the note content.
+                  example: "1754820000123.45"
+                reminder_at:
+                  type: string
+                  description: ISO datetime. Without an offset it is read as UTC.
+                  example: "2026-09-01T16:30:00Z"
+                message:
+                  type: string
+                  description: Notification text. Defaults to the note heading when empty.
+                  example: Buy milk
+                email_enabled:
+                  type: boolean
+                  description: Also send an email. Ignored when SMTP is not configured.
+                recurrence:
+                  type: string
+                  nullable: true
+                  description: >
+                    Repeat interval, "<count><unit>" with unit i/h/d/w/m/y.
+                    Dismissing the notification schedules the next occurrence
+                    and advances the task's due date by the same interval.
+                  example: "1w"
+      responses:
+        '200':
+          description: Task reminder scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  note_id:
+                    type: integer
+                    example: 42
+                  task_id:
+                    type: string
+                    example: "1754820000123.45"
+                  reminder_at:
+                    type: string
+                    description: UTC, "YYYY-MM-DD HH:MM:SS".
+                    example: "2026-09-01 16:30:00"
+                  email_enabled:
+                    type: boolean
+                  recurrence:
+                    type: string
+                    nullable: true
+                    example: "1w"
+        '400':
+          description: Missing task_id/reminder_at, or invalid datetime or recurrence
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Note not found or in trash
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [Reminders]
+      summary: Remove the reminder of one task
+      description: >
+        Removes the pending reminder of a single task. task_id can be sent in
+        the JSON body or as a query parameter.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          description: Note ID of a tasklist note.
+          schema:
+            type: integer
+        - name: task_id
+          in: query
+          required: false
+          description: Task id, when not sent in the body.
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                task_id:
+                  type: string
+                  example: "1754820000123.45"
+      responses:
+        '200':
+          description: Task reminder removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  note_id:
+                    type: integer
+                  task_id:
+                    type: string
+        '400':
+          description: Invalid note ID, or missing task_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Note not found or in trash
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /reminders:
     get:
       tags: [Reminders]
       summary: List triggered notifications
+      description: >
+        Lists reminders that are already due (trigger_at <= now) and not
+        dismissed, newest first, capped at 50. Reminders scheduled in the future
+        are not returned.
       parameters:
         - $ref: '#/components/parameters/UserIdHeader'
         - name: workspace
           in: query
+          description: Restrict to notifications whose note belongs to this workspace.
           schema:
             type: string
       responses:
         '200':
           description: Notifications with unread/total counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  notifications:
+                    type: array
+                    description: Due, non-dismissed notifications, newest first, max 50.
+                    items:
+                      $ref: '#/components/schemas/Notification'
+                  unread_count:
+                    type: integer
+                    description: Due, non-dismissed notifications with is_read = 0. Not capped at 50.
+                    example: 1
+                  total_count:
+                    type: integer
+                    description: All due, non-dismissed notifications. Not capped at 50.
+                    example: 3
+        '500':
+          description: Failed to fetch notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /reminders/count:
     get:
       tags: [Reminders]
       summary: Get unread notification count (lightweight polling)
+      description: >
+        Same counters as GET /reminders without the notification list. On an
+        internal error this endpoint still returns 200 with both counters at 0
+        rather than an error status.
       parameters:
         - $ref: '#/components/parameters/UserIdHeader'
         - name: workspace
           in: query
+          description: Restrict to notifications whose note belongs to this workspace.
           schema:
             type: string
       responses:
         '200':
           description: Notification counters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  unread_count:
+                    type: integer
+                    example: 1
+                  total_count:
+                    type: integer
+                    example: 3
 
   /reminders/dismiss-all:
     post:
       tags: [Reminders]
       summary: Dismiss all notifications
+      description: >
+        Dismisses every due notification. Recurring reminders are rolled forward
+        to their next occurrence; non-recurring ones have their reminder cleared.
+        Notifications scheduled in the future are left untouched. The response
+        does not report the new occurrence times, read them back with
+        GET /notes/{id}/reminder if you need them.
       parameters:
         - $ref: '#/components/parameters/UserIdHeader'
       responses:
         '200':
-          description: All notifications dismissed
+          description: All due notifications dismissed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+        '500':
+          description: Failed to dismiss all notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /reminders/{id}/read:
     post:
       tags: [Reminders]
       summary: Mark a notification as read
+      description: >
+        Clears the unread flag, which lowers unread_count but leaves the
+        notification in the list. Use dismiss to remove it.
       parameters:
         - $ref: '#/components/parameters/UserIdHeader'
         - name: id
           in: path
           required: true
+          description: Notification ID, from GET /reminders (not a note ID).
           schema:
             type: integer
       responses:
         '200':
           description: Notification marked as read
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  id:
+                    type: integer
+                    example: 12
+        '400':
+          description: Invalid notification ID (not numeric)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Notification not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /reminders/{id}/dismiss:
     post:
       tags: [Reminders]
       summary: Dismiss a notification
+      description: >
+        Removes the notification from the list. If the linked note has a
+        recurrence, this is what schedules the next occurrence and returns it as
+        next_reminder_at; otherwise the note's reminder is cleared and
+        next_reminder_at is null.
       parameters:
         - $ref: '#/components/parameters/UserIdHeader'
         - name: id
           in: path
           required: true
+          description: Notification ID, from GET /reminders (not a note ID).
           schema:
             type: integer
       responses:
         '200':
           description: Notification dismissed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  id:
+                    type: integer
+                    example: 12
+                  next_reminder_at:
+                    type: string
+                    nullable: true
+                    description: >
+                      Next occurrence for a recurring reminder, UTC
+                      "YYYY-MM-DD HH:MM:SS". Null when the reminder does not
+                      repeat.
+                    example: "2026-08-17 07:00:00"
+        '400':
+          description: Invalid notification ID (not numeric)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Notification not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   # ==================
   # Share Endpoints
@@ -1273,13 +3059,13 @@ paths:
         '200':
           description: Notes and folders shared with the current user
 
-  /folders/{folderId}/share:
+  /folders/{id}/share:
     get:
       tags: [Share]
       summary: Get folder share status
       parameters:
         - $ref: '#/components/parameters/UserIdHeader'
-        - name: folderId
+        - name: id
           in: path
           required: true
           schema:
@@ -1307,7 +3093,7 @@ paths:
       summary: Create or renew folder share link
       parameters:
         - $ref: '#/components/parameters/UserIdHeader'
-        - name: folderId
+        - name: id
           in: path
           required: true
           schema:
@@ -1335,7 +3121,7 @@ paths:
       summary: Update folder share settings
       parameters:
         - $ref: '#/components/parameters/UserIdHeader'
-        - name: folderId
+        - name: id
           in: path
           required: true
           schema:
@@ -1366,7 +3152,7 @@ paths:
       summary: Revoke folder share link
       parameters:
         - $ref: '#/components/parameters/UserIdHeader'
-        - name: folderId
+        - name: id
           in: path
           required: true
           schema:
@@ -1441,7 +3227,8 @@ paths:
           in: path
           required: true
           schema:
-            type: integer
+            type: string
+            example: '6a296134d3bd0'
       responses:
         '200':
           description: File download
@@ -1464,10 +3251,73 @@ paths:
           in: path
           required: true
           schema:
-            type: integer
+            type: string
+            example: '6a296134d3bd0'
       responses:
         '200':
           description: Attachment deleted
+
+  /notes/{noteId}/attachments/{attachmentId}/move:
+    post:
+      tags: [Attachments]
+      summary: Move an attachment to another note
+      description: >
+        Moves the attachment to another note of the same account, in any
+        workspace. The file follows it, except when the note it leaves still
+        points at it, from its content or from a snapshot: the target then
+        gets its own copy, so both addresses keep resolving and deleting one
+        never takes the other's file away. kept_in_source says which of the
+        two happened.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: noteId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: '6a296134d3bd0'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_note_id]
+              properties:
+                target_note_id:
+                  type: integer
+                  description: The note that receives the attachment
+      responses:
+        '200':
+          description: Attachment moved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  attachment_id:
+                    type: string
+                    description: Its id on the target note
+                  target_note_id:
+                    type: integer
+                  target_note_heading:
+                    type: string
+                  kept_in_source:
+                    type: boolean
+                    description: Whether a copy stayed on the source note
+        '400':
+          description: Missing target_note_id, same note, or a shortcut target
+        '404':
+          description: Note, attachment or target note not found
+        '413':
+          description: Storage limit reached while copying the file
 
   # ==================
   # Folders Endpoints
@@ -1482,17 +3332,24 @@ paths:
           in: query
           schema:
             type: string
-        - name: tree
+        - name: hierarchical
           in: query
           schema:
             type: boolean
-          description: Return as nested tree structure
+          description: Return a nested tree, each folder with its children
       responses:
         '200':
-          description: List of folders
+          description: >
+            List of folders. Each carries its full path and is_diary, which marks
+            the diary roots of the workspace.
     post:
       tags: [Folders]
       summary: Create a new folder
+      description: >
+        Creates one folder from folder_name (optionally under parent_folder_id),
+        or a whole chain from folder_path such as "Projects/2026/Q3". With a
+        path, create_parents decides whether the missing levels on the way down
+        are created or the call fails.
       parameters:
         - $ref: '#/components/parameters/UserIdHeader'
       requestBody:
@@ -1500,18 +3357,40 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, workspace]
               properties:
-                name:
+                folder_name:
                   type: string
+                  description: Name of a single folder to create. 'name' is accepted as an older spelling.
+                folder_path:
+                  type: string
+                  description: Slash-separated path to create, e.g. "Projects/2026/Q3". Takes precedence over folder_name.
+                  example: "Projects/2026/Q3"
+                create_parents:
+                  type: boolean
+                  description: With folder_path, create the missing parent levels instead of failing
+                  default: false
+                is_diary:
+                  type: boolean
+                  description: >
+                    Create the folder as a diary root, the folder the "New diary entry"
+                    button files its dated notes into. A diary is always at the root of
+                    its workspace, so this cannot be combined with a parent folder or a
+                    nested path. When a root folder of that name already exists, it is
+                    turned into a diary (200, converted true) instead of conflicting.
+                  default: false
                 workspace:
                   type: string
-                parent_id:
+                parent_folder_id:
                   type: integer
                   nullable: true
+                  description: Parent of a folder created by name. 'parent_id' is accepted as an older spelling.
       responses:
         '201':
           description: Folder created
+        '404':
+          description: Workspace or parent folder not found (with folder_path, the missing segment is named)
+        '409':
+          description: A folder of that name already exists in that place
 
   /folders/counts:
     get:
@@ -1560,10 +3439,13 @@ paths:
                   description: Source folder ID
                 target_folder_id:
                   type: integer
-                  description: Target folder ID (0 moves notes to root)
+                  description: Target folder ID (0 moves notes to the root of the target workspace)
                 workspace:
                   type: string
-                  description: Workspace context
+                  description: Workspace of the source folder
+                target_workspace:
+                  type: string
+                  description: Workspace to move the notes to (defaults to workspace); the target folder must belong to it
       responses:
         '200':
           description: Files moved
@@ -1730,6 +3612,35 @@ paths:
         '409':
           description: Conflict (e.g., folder with same name exists or move would create a cycle)
 
+  /folders/{id}/archive:
+    post:
+      tags: [Folders]
+      summary: Archive a folder, subfolders and notes into the Archives workspace
+      description: >
+        Moves the folder with everything under it to the "Archives" workspace,
+        creating it on first use and mirroring the folder's parent path inside
+        it. The parent folders are left in the source workspace, and the notes'
+        `updated` dates are preserved. When "Archives" already holds a folder
+        with the same name at that place, the folder is merged into it level
+        by level and the emptied source folders are removed. The folder and its
+        subfolders lose their public links; notes shared on their own keep theirs.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Folder archived (or already in the Archives workspace)
+        '403':
+          description: The folder belongs to a workspace shared with this account
+        '404':
+          description: Folder not found
+        '409':
+          description: Some notes have the same title as a note already archived in the folder they would join (listed in `conflicts`); nothing was moved
+
   /folders/{id}/empty:
     post:
       tags: [Folders]
@@ -1744,6 +3655,8 @@ paths:
       responses:
         '200':
           description: Folder emptied
+        '404':
+          description: Folder not found
 
   /folders/{id}/icon:
     put:
@@ -1768,6 +3681,129 @@ paths:
       responses:
         '200':
           description: Icon updated
+        '404':
+          description: Folder not found
+
+  /folders/{id}/pinned:
+    put:
+      tags: [Folders]
+      summary: Pin or unpin a folder
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pinned]
+              properties:
+                pinned:
+                  type: boolean
+                  example: true
+      responses:
+        '200':
+          description: Pinned state updated
+        '400':
+          description: Invalid folder ID, or missing/invalid "pinned" boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Folder not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /folders/{id}/offline:
+    put:
+      tags: [Folders]
+      summary: Keep a folder's notes offline whatever their date, or stop
+      description: >
+        Keeps the folder's notes, subfolders included, in the browsers where
+        the account is used, with all their attachments (see
+        /offline/manifest), or stops doing so.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [offline]
+              properties:
+                offline:
+                  type: boolean
+                  example: true
+      responses:
+        '200':
+          description: Offline state updated
+        '400':
+          description: Invalid folder ID, or missing/invalid "offline" boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Folder not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /folders/{id}/favorite:
+    put:
+      tags: [Folders]
+      summary: Set the favorite state of a folder
+      description: >
+        Sets the folder favorite state explicitly, unlike the note favorite
+        endpoint which toggles it.
+      parameters:
+        - $ref: '#/components/parameters/UserIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [favorite]
+              properties:
+                favorite:
+                  type: boolean
+                  example: true
+      responses:
+        '200':
+          description: Favorite state updated
+        '400':
+          description: Invalid folder ID, or missing/invalid "favorite" boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Folder not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /folders/{id}/color:
     put:
@@ -1818,6 +3854,8 @@ paths:
       responses:
         '200':
           description: Note count
+        '404':
+          description: Folder not found
 
   /folders/{id}/path:
     get:
@@ -1833,6 +3871,8 @@ paths:
       responses:
         '200':
           description: Folder path
+        '404':
+          description: Folder not found
 
   # ==================
   # Trash Endpoints
@@ -1906,6 +3946,16 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Workspace'
+                  username:
+                    type: string
+                    nullable: true
+                    description: Username of the account whose workspaces are listed
+                  acting_as:
+                    type: string
+                    nullable: true
+                    description: >
+                      Name of the signed-in user when they act on an account
+                      they do not own, null otherwise
     post:
       tags: [Workspaces]
       summary: Create a new workspace
@@ -2016,6 +4066,8 @@ paths:
       responses:
         '200':
           description: Tag renamed
+        '404':
+          description: No note carries this tag
     delete:
       tags: [Tags]
       summary: Delete a tag from all notes
@@ -2034,6 +4086,8 @@ paths:
       responses:
         '200':
           description: Tag deleted
+        '404':
+          description: No note carries this tag
 
   # ==================
   # Settings Endpoints
@@ -2143,6 +4197,13 @@ paths:
       description: |
         Creates a backup for the specified user. Requires admin credentials.
         The X-User-ID header specifies which user's data to backup.
+
+        The archive is the same complete backup as the web UI's "Complete
+        Backup": database dump, note files, and every attachment, including
+        the ones stored in the S3 bucket when S3 attachment storage is
+        configured (they are fetched from the bucket while building the
+        archive). If the bucket cannot be read, the request fails instead of
+        returning an archive with missing files.
       parameters:
         - name: X-User-ID
           in: header
@@ -2281,7 +4342,16 @@ paths:
     post:
       tags: [Backups]
       summary: Restore a backup
-      description: Restore a backup file. This will replace all current user data (database, notes, and attachments) with the data from the backup.
+      description: |
+        Restore a backup file. This will replace all current user data
+        (database, notes, and attachments) with the data from the backup.
+
+        When S3 attachment storage is enabled, the restore replaces the
+        user's bucket content too, so it refuses archives that do not carry
+        every attachment file their metadata references (for example a
+        backup made with the "lighter archive" option), and it refuses to
+        run while the bucket is unreachable. Nothing is modified when the
+        restore is refused.
       parameters:
         - name: filename
           in: path
@@ -2478,7 +4548,7 @@ paths:
               properties:
                 provider:
                   type: string
-                  enum: [github, forgejo]
+                  enum: [github, gitlab, forgejo]
                 repo:
                   type: string
                   example: "username/my-notes"
@@ -2490,7 +4560,7 @@ paths:
                   default: main
                 api_base:
                   type: string
-                  description: API base URL (Forgejo only)
+                  description: API base URL (GitLab and Forgejo; GitLab defaults to https://gitlab.com/api/v4)
                 author_name:
                   type: string
                 author_email:
@@ -2731,6 +4801,37 @@ paths:
           description: Profile updated
         '400':
           description: Invalid or already-taken username/email, or no valid fields
+    delete:
+      tags: [Users]
+      summary: Delete current user's own account and all its data
+      description: >-
+        Does NOT require X-User-ID header. Permanently deletes the account,
+        including all notes, files and attachments. The username must be
+        repeated in the body as confirmation, and password sessions must also
+        re-enter the current password (OIDC sessions skip the password check).
+        User ID 1 and the last active admin cannot be deleted. On success the
+        session is destroyed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm_username]
+              properties:
+                confirm_username:
+                  type: string
+                  description: Must exactly match the current username
+                password:
+                  type: string
+                  description: Current password (required for non-OIDC sessions)
+      responses:
+        '200':
+          description: Account deleted; response includes a redirect URL for the login page
+        '400':
+          description: Username confirmation mismatch, missing password, or account cannot be deleted
+        '403':
+          description: Password is incorrect
 
   /users/me/password:
     post:
@@ -2770,6 +4871,248 @@ paths:
       responses:
         '200':
           description: Password status
+
+  /users/me/app-passwords:
+    get:
+      tags: [Users]
+      summary: List current user's app passwords
+      description: |
+        App passwords are API credentials a user hands to one client (browser extension,
+        phone, script) in place of the account password. They are sent like the account
+        password over Basic auth, work on SSO-only instances, never open a browser session,
+        never reach admin routes, cannot manage the account, and act only on their own profile.
+        The secrets are never returned, only a short hint. Does NOT require X-User-ID header.
+        Not available to requests authenticated with an app password.
+      responses:
+        '200':
+          description: App passwords of the current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app_passwords:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AppPassword'
+                  count:
+                    type: integer
+                  active_count:
+                    type: integer
+                  limit:
+                    type: integer
+                    example: 25
+        '403':
+          description: Requested with an app password
+    post:
+      tags: [Users]
+      summary: Create an app password
+      description: |
+        The clear-text secret is in this response and nowhere else afterwards.
+        Does NOT require X-User-ID header. Not available to requests authenticated with an app password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label]
+              properties:
+                label:
+                  type: string
+                  maxLength: 60
+                  example: "Chrome extension"
+                expires_in_days:
+                  type: integer
+                  minimum: 1
+                  maximum: 3650
+                  description: Lifetime in days; omit for no expiry
+      responses:
+        '201':
+          description: App password created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  app_password:
+                    $ref: '#/components/schemas/AppPassword'
+                  secret:
+                    type: string
+                    example: "pzn_2f7c4e1a9b0d5c6e7f8091a2b3c4d5e6f7a8b9c0d1"
+        '400':
+          description: Missing label or invalid expiry
+        '403':
+          description: Requested with an app password
+        '409':
+          description: App password limit reached
+
+  /users/me/app-passwords/{id}:
+    delete:
+      tags: [Users]
+      summary: Revoke an app password
+      description: |
+        A client still holding the secret is refused from the next request on.
+        Does NOT require X-User-ID header. Not available to requests authenticated with an app password.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: App password revoked
+        '403':
+          description: Requested with an app password
+        '404':
+          description: No such app password on this profile
+
+  /users/me/two-factor:
+    get:
+      tags: [Users]
+      summary: Two-factor authentication status
+      description: |
+        Two-factor authentication asks for a TOTP code from an authenticator app after the
+        password on the login form. It applies to password sign-in only. While it is on, the API
+        refuses the account password over Basic auth unless the current code comes with it in the
+        X-Poznote-OTP header; app passwords work unchanged.
+        Does NOT require X-User-ID header. Not available to requests authenticated with an app password.
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: { type: boolean }
+                  enabled_at: { type: string, nullable: true }
+                  recovery_codes_remaining: { type: integer }
+                  unavailable_reason:
+                    type: string
+                    nullable: true
+                    enum: [sso_only, no_local_password]
+        '403':
+          description: Requested with an app password
+
+  /users/me/two-factor/setup:
+    post:
+      tags: [Users]
+      summary: Start switching two-factor on
+      description: |
+        Returns a new secret for the authenticator app. Nothing is stored until /enable confirms
+        it with a first code; the pending secret lives in the session, so keep cookies between the two calls.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password]
+              properties:
+                current_password: { type: string }
+      responses:
+        '200':
+          description: Secret and otpauth URI
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret: { type: string, description: Base32 shared secret }
+                  otpauth_uri: { type: string }
+                  issuer: { type: string }
+                  account: { type: string }
+        '403':
+          description: Wrong password, app password, or password sign-in not available for this account
+        '409':
+          description: Two-factor is already on
+        '429':
+          description: Too many failed attempts
+
+  /users/me/two-factor/enable:
+    post:
+      tags: [Users]
+      summary: Confirm the two-factor setup
+      description: The recovery codes are in this response and nowhere else afterwards.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, description: 6-digit code for the secret returned by setup }
+      responses:
+        '200':
+          description: Two-factor is on
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  recovery_codes:
+                    type: array
+                    items: { type: string }
+                  enabled: { type: boolean }
+                  recovery_codes_remaining: { type: integer }
+        '400':
+          description: Incorrect code
+        '409':
+          description: No setup in progress, or two-factor already on
+        '429':
+          description: Too many failed attempts
+
+  /users/me/two-factor/recovery-codes:
+    post:
+      tags: [Users]
+      summary: Replace the recovery codes
+      description: The previous codes stop working. A recovery code is not accepted as confirmation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, description: 6-digit code from the authenticator app }
+      responses:
+        '200':
+          description: New recovery codes
+        '400':
+          description: Incorrect code
+        '409':
+          description: Two-factor is not on
+
+  /users/me/two-factor/disable:
+    post:
+      tags: [Users]
+      summary: Switch two-factor off
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, code]
+              properties:
+                current_password: { type: string }
+                code: { type: string, description: "6-digit code from the app, or a recovery code" }
+      responses:
+        '200':
+          description: Two-factor is off
+        '400':
+          description: Incorrect code
+        '403':
+          description: Wrong password, or requested with an app password
+        '409':
+          description: Two-factor is not on
 
   /users/lookup/{username}:
     get:
@@ -2819,9 +5162,51 @@ paths:
       description: |
         Get detailed list of all user profiles with storage statistics.
         Requires admin privileges. Does NOT require X-User-ID header.
+        Storage statistics are computed per user, so on instances with many
+        users prefer paging with limit/offset.
+
+        There is no default page size: omitting `limit` returns every user,
+        as it always has. Clients that reconcile the full account list can
+        therefore keep calling this endpoint with no parameters and be sure
+        they see every account. Paging engages only when `limit` is passed.
+
+        Rows are ordered by `id` ascending, so `offset` is stable across
+        calls and consecutive pages never overlap or skip an account.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+          description: >-
+            Page size, clamped to 1-200. Omit to return every user (no paging).
+            A value above 200 is clamped; check the `limit` field in the
+            response to detect it.
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: >-
+            Number of users to skip, clamped to >= 0. Ignored unless `limit`
+            is also passed.
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter on username, email, first or last name.
       responses:
         '200':
-          description: List of users with statistics
+          description: >-
+            List of users with statistics. `total` is the full matching count,
+            not the page size. `limit` and `offset` echo the values actually
+            applied after clamping, and are both null when no paging was
+            requested (the response then contains every user).
           content:
             application/json:
               schema:
@@ -2855,6 +5240,15 @@ paths:
                           type: integer
                   total:
                     type: integer
+                    description: Total users matching the query, ignoring paging.
+                  limit:
+                    type: integer
+                    nullable: true
+                    description: Page size actually applied, or null when no paging was requested.
+                  offset:
+                    type: integer
+                    nullable: true
+                    description: Offset actually applied, or null when no paging was requested.
         '403':
           description: Admin access required
     post:
@@ -2985,21 +5379,24 @@ paths:
       tags: [Users]
       summary: Delete a user profile (admin only)
       description: |
-        Delete a user profile. Optionally delete all user data.
+        Delete a user profile and everything it owns: its local data (notes,
+        folders, tags, attachments) and its objects in the S3 buckets
+        (attachments and backup archives). The former delete_data parameter is
+        gone; deletion always removes all data.
+
         Cannot delete your own profile or the last admin.
         Requires admin privileges. Does NOT require X-User-ID header.
+
+        This is immediate and irreversible, so download a complete backup ZIP
+        first if the data still matters. The response reports
+        s3_objects_deleted, plus s3_error when a bucket could not be reached
+        (the account is deleted regardless).
       parameters:
         - name: id
           in: path
           required: true
           schema:
             type: integer
-        - name: delete_data
-          in: query
-          schema:
-            type: boolean
-            default: false
-          description: If true, also delete all user data (notes, attachments, etc.)
       responses:
         '200':
           description: User deleted successfully
@@ -3046,6 +5443,30 @@ paths:
           description: Admin access required
         '404':
           description: User not found
+
+  /admin/users/{id}/two-factor/reset:
+    post:
+      tags: [Users]
+      summary: Switch a user's two-factor off (admin only)
+      description: |
+        For a user who lost their device and their recovery codes. They sign in with the password
+        alone afterwards. Recorded in the activity log.
+        Requires admin privileges. Does NOT require X-User-ID header.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Two-factor switched off
+        '403':
+          description: Admin access required
+        '404':
+          description: User not found
+        '409':
+          description: Two-factor is not on for this user
 
   /admin/users/{id}/password-status:
     get:
@@ -3129,12 +5550,48 @@ paths:
                         type: integer
                       links_rebuilt:
                         type: integer
+                      links_skipped:
+                        type: integer
+                        description: Links left with another account that already uses the same token
                       errors:
                         type: array
                         items:
                           type: string
         '403':
           description: Admin access required
+
+  /admin/orphan-attachments:
+    get:
+      tags: [Users]
+      summary: List orphan attachment files (admin only)
+      description: |
+        Scan the local attachment folder of every account and list the files
+        no note of that account references any more. Files kept in S3 storage
+        are not listed. Requires admin privileges. Does NOT require X-User-ID header.
+      responses:
+        '200':
+          description: One row per account folder
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrphanAttachmentsResult'
+        '403':
+          description: Admin access required
+    delete:
+      tags: [Users]
+      summary: Delete orphan attachment files (admin only)
+      description: |
+        Same scan as GET, then delete every file it lists. Not available with
+        an app password. Requires admin privileges. Does NOT require X-User-ID header.
+      responses:
+        '200':
+          description: One row per account folder, with the number of files deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrphanAttachmentsResult'
+        '403':
+          description: Admin access required, or app password used
 
   # ==================
   # Public Tasks Endpoints (token-based, no Basic Auth)
@@ -3198,6 +5655,12 @@ paths:
                   type: boolean
                 text:
                   type: string
+                subtask:
+                  type: integer
+                  description: >
+                    Tasklist notes only: zero-based position of a subtask of
+                    that task. `completed` then applies to the subtask and is
+                    required, `text` is refused.
       responses:
         '200':
           description: Task updated

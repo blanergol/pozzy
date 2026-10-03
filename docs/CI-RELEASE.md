@@ -1,59 +1,60 @@
-# CI/CD: проверки и релиз APK
+# CI/CD: checks and APK release
 
 ## Flow
 
-1. **Push в `master` или pull request** → workflow `ci.yml`:
-   typecheck (`npx tsc --noEmit`, отдельного ESLint в проекте нет) + unit-тесты (`npx jest`).
+1. **Push to `master` or a pull request** → the `ci.yml` workflow:
+   typecheck (`npx tsc --noEmit`; the project has no separate ESLint) + unit tests (`npx jest`).
 
-2. **Тег `v*`** → workflow `android-apk.yml`: те же проверки, затем сборка
-   подписанного release-APK, проверка подписи `apksigner`, артефакт
-   `pozzy-release-apk` и публикация APK в GitHub Releases (с автогенерацией
+2. **A `v*` tag** → the `android-apk.yml` workflow: the same checks, then a build of
+   a signed release APK, an `apksigner` signature check, the `pozzy-release-apk`
+   artifact and publication of the APK to GitHub Releases (with auto-generated
    release notes).
 
-Версии ведём с `v1.0.1`. Выпуск релиза:
+Versions start at `v1.0.1`. To cut a release:
 
 ```bash
-# поднять version в app.json, затем:
+# bump version in app.json, then:
 git tag v1.0.1
 git push origin v1.0.1
 ```
 
-`expo prebuild` берёт `versionName` для Android из `expo.version` в `app.json`,
-поэтому версия в `app.json` и тег должны совпадать.
+`expo prebuild` takes the Android `versionName` from `expo.version` in `app.json`,
+so the version in `app.json` and the tag must match.
 
-## Подпись
+## Signing
 
-APK подписывается release-ключом из секретов репозитория. Настройка (один раз):
+The APK is signed with a release key stored in the repository secrets. One-time setup:
 
-1. Сгенерировать keystore локально:
+1. Generate a keystore locally:
    ```bash
    keytool -genkeypair -v -storetype PKCS12 \
      -keystore release.keystore -alias pozzy-release \
      -keyalg RSA -keysize 2048 -validity 10000
    ```
-   Сохраните `release.keystore` и пароли в надёжном месте: потеря ключа = невозможность
-   обновлять приложение (Android требует одну подпись для всех версий).
+   Keep `release.keystore` and the passwords in a safe place: losing the key means
+   you can no longer update the app (Android requires the same signature for every version).
 
-2. Добавить секреты (Settings → Secrets and variables → Actions):
-   - `RELEASE_KEYSTORE_BASE64` — вывод `base64 -w0 release.keystore`;
-   - `RELEASE_KEYSTORE_PASSWORD` — пароль хранилища;
-   - `RELEASE_KEY_ALIAS` — алиас ключа (например `pozzy-release`);
-   - `RELEASE_KEY_PASSWORD` — пароль ключа.
+2. Add the secrets (Settings → Secrets and variables → Actions):
+   - `RELEASE_KEYSTORE_BASE64` — the output of `base64 -w0 release.keystore`;
+   - `RELEASE_KEYSTORE_PASSWORD` — keystore password;
+   - `RELEASE_KEY_ALIAS` — key alias (for example `pozzy-release`);
+   - `RELEASE_KEY_PASSWORD` — key password.
 
-3. Workflow на каждой сборке восстанавливает keystore из секрета во временный файл и
-   передаёт путь/пароли в Gradle через env. Поскольку `android/` в `.gitignore`
-   (managed workflow), нативный проект генерируется в CI шагом `expo prebuild`, а
-   подпись подставляет конфиг-плагин `plugins/withReleaseSigning.js`: он вписывает
-   `signingConfigs.release` (из env) в свежий `android/app/build.gradle`.
-   Без env-переменных release собирается debug-подписью — локальная сборка
-   (`npx expo run:android --variant release`) не ломается.
+3. On every build the workflow restores the keystore from the secret into a temporary
+   file and passes the path and passwords to Gradle through environment variables. Since
+   `android/` is in `.gitignore` (managed workflow), the native project is generated in CI
+   by the `expo prebuild` step, and the signing config is injected by the config plugin
+   `plugins/withReleaseSigning.js`: it writes `signingConfigs.release` (from env) into the
+   freshly generated `android/app/build.gradle`. Without the env variables the release
+   build falls back to the debug signature, so a local build
+   (`npx expo run:android --variant release`) keeps working.
 
-Шаг `Verify APK signature` печатает сертификат подписи APK в лог сборки — по нему можно
-сверить, что приложен именно release-ключ.
+The `Verify APK signature` step prints the APK signing certificate to the build log, so
+you can confirm that the release key was applied.
 
-## Google Play (если понадобится)
+## Google Play (if ever needed)
 
-Для публикации в Google Play нужен AAB вместо APK:
+Publishing to Google Play requires an AAB instead of an APK:
 
 ```yaml
 - run: ./gradlew bundleRelease   # android/app/build/outputs/bundle/release/app-release.aab

@@ -8,7 +8,7 @@ import {
 } from 'expo-speech-recognition';
 import { useTheme } from '../theme/ThemeContext';
 
-// useIsFocused падает вне навигационного контекста (unit-тесты) — тогда считаем экран видимым
+// useIsFocused throws outside a navigation context (unit tests); treat the screen as visible then
 function useSafeIsFocused(): boolean {
   try {
     // eslint-disable-next-line react-hooks/rules-of-hooks
@@ -21,22 +21,22 @@ function useSafeIsFocused(): boolean {
 export type VoiceErrorKind = 'permission' | 'generic';
 
 interface UseVoiceDictationOptions {
-  /** Язык распознавания (BCP-47), например ru-RU. */
+  /** Recognition language (BCP-47), e.g. ru-RU. */
   lang: string;
-  /** Текущий распознанный текст сессии (финальные фразы + текущий interim). */
+  /** Current recognized text of the session (final phrases + current interim). */
   onTranscript: (text: string) => void;
   onError?: (kind: VoiceErrorKind) => void;
   /**
-   * События обрабатываются только когда enabled=true (по умолчанию — когда экран
-   * в фокусе). События модуля глобальны: без этого диктовка в редакторе
-   * попадала бы и в поле ввода чата (оба экрана смонтированы одновременно).
+   * Events are handled only when enabled=true (by default, when the screen is
+   * focused). Module events are global: without this, dictation in the editor
+   * would also land in the chat input (both screens are mounted at the same time).
    */
   enabled?: boolean;
 }
 
 /**
- * Диктовка: onTranscript получает весь текст текущей сессии (не дельту) —
- * потребитель сам решает, куда его подставить (поле ввода, позиция курсора).
+ * Dictation: onTranscript receives the whole text of the current session (not a delta);
+ * the consumer decides where to put it (input field, cursor position).
  */
 export function useVoiceDictation({ lang, onTranscript, onError, enabled }: UseVoiceDictationOptions) {
   const focused = useSafeIsFocused();
@@ -64,7 +64,7 @@ export function useVoiceDictation({ lang, onTranscript, onError, enabled }: UseV
     };
   }, []);
 
-  // Экран ушёл из фокуса посреди диктовки — обрываем, чтобы не писать «в никуда»
+  // Screen lost focus mid-dictation: abort so we don't write "into the void"
   useEffect(() => {
     if (!active && listeningRef.current) {
       ExpoSpeechRecognitionModule.abort();

@@ -5,7 +5,7 @@ import { useConnectivity } from '../context/ConnectivityContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n';
 
-/** Полоса-индикатор оффлайн-режима. Онлайн — не рендерится. */
+/** Offline-mode indicator bar. Not rendered when online. */
 export default function OfflineBanner() {
   const { isOnline } = useConnectivity();
   const { colors } = useTheme();

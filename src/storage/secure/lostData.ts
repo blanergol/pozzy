@@ -1,10 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
- * Учёт потерянных несинхронизированных правок: очередь сервера оказалась
- * нечитаемой (нет ключа данных после восстановления из бэкапа, смена
- * устройства, повреждение). Флаг переживает перезапуск, пока пользователь
- * не увидит сообщение. Хранятся только id профилей — без содержимого.
+ * Tracking of lost unsynced edits: the server's queue turned out to be
+ * unreadable (no data key after a restore from backup, device change,
+ * corruption). The flag survives restarts until the user sees the message.
+ * Only profile ids are stored — no content.
  */
 
 const LOST_EDITS_KEY = 'pozzy.lostEdits.v1';
@@ -38,7 +38,7 @@ export function recordLostEdits(serverId: string): Promise<void> {
   );
 }
 
-/** Забрать список серверов с потерянными правками и сбросить флаг. */
+/** Take the list of servers with lost edits and reset the flag. */
 export function takeLostEdits(): Promise<string[]> {
   const next = chain.then(async () => {
     const ids = await readIds();

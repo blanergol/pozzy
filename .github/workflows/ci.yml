@@ -1,4 +1,4 @@
-# Проверки на push в master и в каждом pull request: типы + unit-тесты.
+# Checks on every push to master and on every pull request: types + unit tests.
 name: CI
 
 on:
@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Отдельного ESLint в проекте нет — статический анализ покрывает tsc
+      # The project has no separate ESLint — static analysis is covered by tsc
       - name: Typecheck
         run: npx tsc --noEmit
 

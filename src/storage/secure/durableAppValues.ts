@@ -2,11 +2,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { APP_SCOPE, encryptedCache } from './encryptedCache';
 
 /**
- * Пользовательский контент приложения, который должен переживать перезапуск
- * на всех платформах (шаблоны заметок). На iOS/Android — зашифрованный кэш
- * с ключом приложения. На web ключ данных негде хранить, а держать шаблоны
- * только в памяти значит терять их при каждой перезагрузке страницы, поэтому
- * там они остаются в localStorage как раньше (секретов в них нет; см. README).
+ * App-level user content that must survive a restart on all platforms
+ * (note templates). On iOS/Android it goes to the encrypted cache under the
+ * app key. On web there is nowhere to store the data key, and keeping templates
+ * in memory only would mean losing them on every page reload, so there they
+ * stay in localStorage as before (they contain no secrets; see README).
  */
 export const durableAppValues = {
   get(key: string): Promise<string | null> {

@@ -8,7 +8,7 @@ import {
 } from '../toolHelpers';
 import { PoznoteTool } from './types';
 
-/** Составные и аналитические операции: merge, замена текста, конвертация, статистика. */
+/** Composite and analytical operations: merge, text replacement, conversion, statistics. */
 export const SMART_TOOLS: PoznoteTool[] = [
   {
     spec: {

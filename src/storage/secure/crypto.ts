@@ -3,13 +3,13 @@ import { getRandomBytes } from 'expo-crypto';
 import { base64FromBytes, base64ToBytes, utf8Decode, utf8Encode } from '../../utils/base64';
 
 /**
- * Шифрование значений кэша: XChaCha20-Poly1305 (@noble/ciphers, чистый JS —
- * одинаково работает на iOS, Android, web и в jest). Случайность — expo-crypto
- * (CSPRNG платформы): в Hermes нет crypto.getRandomValues.
+ * Encryption of cache values: XChaCha20-Poly1305 (@noble/ciphers, pure JS —
+ * works identically on iOS, Android, web and in jest). Randomness comes from expo-crypto
+ * (the platform CSPRNG): Hermes has no crypto.getRandomValues.
  *
- * Конверт: `enc:v1:<base64(nonce || ciphertext)>`, где ciphertext включает
- * 16-байтный тег Poly1305. Associated data — ключ хранилища, под которым лежит
- * значение: шифротекст нельзя незаметно переложить под другой ключ.
+ * Envelope: `enc:v1:<base64(nonce || ciphertext)>`, where ciphertext includes
+ * the 16-byte Poly1305 tag. Associated data is the storage key the value is stored
+ * under: ciphertext can't be silently moved under a different key.
  */
 
 export const ENVELOPE_PREFIX = 'enc:v1:';
@@ -17,7 +17,7 @@ export const DATA_KEY_BYTES = 32;
 const NONCE_BYTES = 24;
 const TAG_BYTES = 16;
 
-/** Ошибка расшифровки. Сообщение намеренно не содержит данных. */
+/** Decryption error. The message deliberately contains no data. */
 export class DecryptError extends Error {
   constructor(reason: string) {
     super(`decrypt failed: ${reason}`);
@@ -33,12 +33,12 @@ export function randomBytes(length: number): Uint8Array {
   return bytes;
 }
 
-/** Новый 256-битный ключ данных (base64 для хранения в SecureStore). */
+/** New 256-bit data key (base64 for storage in SecureStore). */
 export function generateDataKey(): string {
   return base64FromBytes(randomBytes(DATA_KEY_BYTES));
 }
 
-/** Разобрать сохранённый ключ; null = ключ повреждён. */
+/** Parse a stored key; null = the key is corrupted. */
 export function decodeDataKey(encoded: string): Uint8Array | null {
   try {
     const key = base64ToBytes(encoded);

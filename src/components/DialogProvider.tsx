@@ -24,8 +24,8 @@ const DialogContext = createContext<DialogContextValue | null>(null);
 const DEFAULT_BUTTONS: DialogButton[] = [{ text: 'OK', style: 'cancel' }];
 
 /**
- * Кроссплатформенная замена Alert.alert:
- * react-native-web реализует Alert как no-op, поэтому на вебе нативный Alert не работает.
+ * Cross-platform replacement for Alert.alert:
+ * react-native-web implements Alert as a no-op, so the native Alert does not work on web.
  */
 export function DialogProvider({ children }: { children: React.ReactNode }) {
   const { colors } = useTheme();
@@ -57,7 +57,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
                       style={styles.button}
                       onPress={() => {
                         close();
-                        // даём модалке закрыться перед действием
+                        // let the modal close before the action
                         setTimeout(() => button.onPress?.(), 50);
                       }}
                     >

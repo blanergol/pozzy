@@ -1,4 +1,4 @@
-// Мок expo-speech-recognition для jest: нативный модуль в рантайме тестов отсутствует.
+// expo-speech-recognition mock for jest: the native module is absent in the test runtime.
 module.exports = {
   ExpoSpeechRecognitionModule: {
     isRecognitionAvailable: () => false,

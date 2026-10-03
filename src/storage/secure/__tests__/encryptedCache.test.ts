@@ -58,7 +58,7 @@ describe('encryptedCache', () => {
     expect(result.values.size).toBe(0);
     expect(result.unreadable).toEqual(['pozzy.cache.s1.a']);
     expect(rawAsyncStorage()['pozzy.cache.s1.a']).toBeUndefined();
-    // после потери ключа запись снова работает (с новым ключом)
+    // after the key is lost, writing works again (with a new key)
     await encryptedCache.set('s1', 'pozzy.cache.s1.a', 'fresh');
     restartApp();
     expect(await encryptedCache.get('s1', 'pozzy.cache.s1.a')).toBe('fresh');

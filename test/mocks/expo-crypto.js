@@ -1,4 +1,4 @@
-// Мок expo-crypto для jest: CSPRNG из Node.
+// expo-crypto mock for jest: CSPRNG from Node.
 const nodeCrypto = require('crypto');
 
 module.exports = {

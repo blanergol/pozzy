@@ -47,15 +47,15 @@ import { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NoteEditor'>;
 
-// Уникальный ID сессии редактирования на время жизни приложения (для edit-lock'ов)
+// Unique editing session ID for the lifetime of the app (used for edit locks)
 const EDITOR_SESSION_ID =
   'mobile-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 
 const LOCK_HEARTBEAT_MS = 45_000;
-// Задержка автосохранения после последнего ввода
+// Autosave delay after the last keystroke
 const AUTOSAVE_DEBOUNCE_MS = 1_000;
 
-/** Задача tasklist-заметки (content = JSON-массив таких объектов). */
+/** A task of a tasklist note (content = a JSON array of these objects). */
 interface TaskItem {
   id: number;
   text: string;
@@ -86,12 +86,12 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   const dialog = useDialog();
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles, colors);
-  // На Android 15+ отступ равен полной высоте клавиатуры:
-  // endCoordinates.height уже не включает системный инсет навигации.
+  // On Android 15+ the padding equals the full keyboard height:
+  // endCoordinates.height no longer includes the system navigation inset.
   const bottomPadding = useAndroidKeyboardPadding();
   const { t, locale } = useI18n();
 
-  // Локальная заметка, созданная оффлайн (ещё не существует на сервере)
+  // Local note created offline (doesn't exist on the server yet)
   const isTemp = isTempNoteId(noteId);
 
   const [note, setNote] = useState<NoteDetails | null>(null);
@@ -118,8 +118,8 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   const lockHeldRef = useRef(false);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Диктовка: вставка распознанного текста в позицию курсора поля content.
-  // Для tasklist выключена — там content это JSON-массив задач.
+  // Dictation: insert the recognized text at the cursor position in the content field.
+  // Disabled for tasklist, where content is a JSON array of tasks.
   const selectionRef = useRef({ start: 0, end: 0 });
   const dictationRef = useRef<{ before: string; after: string } | null>(null);
   const voice = useVoiceDictation({
@@ -148,7 +148,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voice.listening]);
 
-  // Быстрое действие «Голосовая заметка»: диктовка стартует сама после загрузки
+  // "Voice note" quick action: dictation starts automatically once the note is loaded
   const startVoice = route.params.startVoice;
   useEffect(() => {
     if (startVoice && note && voice.available && !voice.listening) {
@@ -157,7 +157,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     }
   }, [startVoice, note, voice.available, voice.listening, handleVoicePress, navigation]);
 
-  // Озвучка заметки (TTS)
+  // Reading the note aloud (TTS)
   const [speaking, setSpeaking] = useState(false);
   useEffect(
     () => () => {
@@ -174,7 +174,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     }
     let text: string;
     if (note?.type === 'tasklist') {
-      // content — JSON-массив задач: озвучиваем только тексты
+      // content is a JSON array of tasks: speak only their texts
       try {
         const tasks = JSON.parse(content || '[]') as { text?: string }[];
         text = tasks.map((x) => x.text ?? '').filter(Boolean).join('. ');
@@ -195,7 +195,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     });
   }, [speaking, note?.type, content, heading, locale]);
 
-  // OCR: распознать текст с фото через vision-модель из настроек AI
+  // OCR: recognize text from a photo via the vision model from the AI settings
   const [ocrRunning, setOcrRunning] = useState(false);
   const handleOcr = useCallback(async () => {
     if (!aiSettings.apiKey.trim() || ocrRunning) return;
@@ -210,7 +210,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
       setOcrRunning(true);
       const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
       const text = await extractTextFromImage(aiSettings, base64, asset.mimeType ?? 'image/jpeg');
-      // Вставляем в позицию курсора, как при диктовке
+      // Insert at the cursor position, same as with dictation
       const c = valuesRef.current.content;
       const s = Math.min(selectionRef.current.start, selectionRef.current.end);
       const e = Math.max(selectionRef.current.start, selectionRef.current.end);
@@ -226,7 +226,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     }
   }, [aiSettings, ocrRunning, t]);
 
-  // Напоминание заметки — событием в системный календарь
+  // Note reminder as an event in the system calendar
   const handleAddToCalendar = useCallback(async () => {
     if (!note?.reminder_at) return;
     try {
@@ -259,8 +259,8 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     }
   }, [note, heading, dialog, t]);
 
-  // Контекст репозитория всегда актуален через ref — колбэки load/save
-  // не пересоздаются при смене connectivity (иначе load() сбрасывал бы ввод).
+  // The repository context is always current via a ref, so the load/save callbacks
+  // aren't recreated when connectivity changes (otherwise load() would reset the input).
   const repoCtxRef = useRef<RepoContext | null>(null);
   useEffect(() => {
     repoCtxRef.current = client
@@ -294,7 +294,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   }, [client, noteId, stopHeartbeat]);
 
   const acquireLock = useCallback(async () => {
-    // Оффлайн и локальные заметки без серверного id локи не используют
+    // Offline mode and local notes without a server id don't use locks
     if (!client || !isOnlineRef.current || isTempNoteId(noteId)) return;
     try {
       await client.acquireLock(noteId, EDITOR_SESSION_ID);
@@ -314,7 +314,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
       if (e instanceof LockConflictError) {
         setLockedByOther(t('editor.lockReadOnly'));
       }
-      // прочие ошибки лока не блокируют работу: сервер сам захватит лок при сохранении
+      // other lock errors don't block editing: the server acquires the lock itself on save
     }
   }, [client, noteId, stopHeartbeat, t]);
 
@@ -350,7 +350,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
       tags !== (note.tags ?? '') ||
       content !== (note.content ?? ''));
 
-  // ===== Автосохранение =====
+  // ===== Autosave =====
 
   const valuesRef = useRef({ heading: '', tags: '', content: '' });
   const isDirtyRef = useRef(false);
@@ -371,9 +371,9 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     const nextHeading = h.trim() || t('common.untitled');
     try {
       await repoUpdateNote(ctx, noteId, { heading: nextHeading, content: c, tags: tg }, EDITOR_SESSION_ID);
-      // Сбрасываем «грязность» только по сохранённым значениям: если за время
-      // сохранения пользователь ввёл ещё — поля останутся отличающимися и
-      // автосохранение сработает повторно.
+      // Reset the "dirty" state only against the saved values: if the user typed more
+      // while the save was in flight, the fields will still differ and
+      // autosave will fire again.
       setNote((prev) => (prev ? { ...prev, heading: nextHeading, content: c, tags: tg } : prev));
       setSavedAt(
         new Date().toLocaleTimeString(dateLocale(locale), { hour: '2-digit', minute: '2-digit' }),
@@ -410,19 +410,19 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     performSaveRef.current = performSave;
   }, [performSave]);
 
-  // Любое изменение полей → отложенное автосохранение
+  // Any field change → deferred autosave
   useEffect(() => {
     valuesRef.current = { heading, tags, content };
     isDirtyRef.current = isDirty;
     if (isDirty && !lockedByOther) scheduleSave();
   }, [heading, tags, content, isDirty, lockedByOther, scheduleSave]);
 
-  // При уходе с экрана — немедленный flush несохранённого
+  // On leaving the screen, flush unsaved changes immediately
   useEffect(
     () => () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       if (isDirtyRef.current && !lockedRef.current) {
-        // fire-and-forget: оффлайн запишется в кэш, онлайн — попробует уйти на сервер
+        // fire-and-forget: offline it's written to the cache, online it tries to reach the server
         void performSaveRef.current();
       }
     },
@@ -568,7 +568,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
       client
         .setNoteReminder(note.id, { reminder_at: date.toISOString() })
         .then(() => {
-          // локальное уведомление — напомнит, даже если приложение закрыто
+          // local notification: reminds even when the app is closed
           scheduleNoteReminder(note.id, note.heading, date.toISOString()).catch(() => {});
           load();
         })
@@ -714,7 +714,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     setActionsVisible(true);
   }, []);
 
-  // ===== Чек-лист (tasklist): content — JSON-массив задач =====
+  // ===== Checklist (tasklist): content is a JSON array of tasks =====
 
   const [newTaskText, setNewTaskText] = useState('');
 
@@ -724,7 +724,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
       const parsed = JSON.parse(content || '[]');
       return Array.isArray(parsed) ? parsed : [];
     } catch {
-      // повреждённый/не-JSON контент — показываем обычный текстовый редактор
+      // corrupted/non-JSON content: fall back to the plain text editor
       return null;
     }
   }, [note?.type, content]);
@@ -780,7 +780,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
         onPress: () => setAttachmentsVisible(true),
       },
     ];
-    // OCR через vision-модель: только если настроен AI
+    // OCR via the vision model: only if AI is configured
     if (aiSettings.enabled && aiSettings.apiKey.trim() && note.type !== 'tasklist') {
       items.push({ label: t('editor.ocr'), icon: 'scan-outline', onPress: handleOcr });
     }
@@ -1005,7 +1005,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
         ) : null}
       </ScrollView>
 
-      {/* Версии (snapshots) */}
+      {/* Versions (snapshots) */}
       <Modal
         visible={snapshotsVisible}
         animationType="slide"
@@ -1048,7 +1048,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
         </View>
       </Modal>
 
-      {/* Выбор папки */}
+      {/* Folder picker */}
       <Modal
         visible={foldersVisible}
         animationType="slide"
@@ -1100,7 +1100,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
         </View>
       </Modal>
 
-      {/* Обратные ссылки */}
+      {/* Backlinks */}
       <Modal
         visible={backlinksVisible}
         animationType="slide"

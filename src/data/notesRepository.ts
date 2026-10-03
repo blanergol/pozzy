@@ -12,8 +12,8 @@ import {
 import { bumpDataVersion } from '../utils/freshness';
 
 /**
- * Контекст вызова репозитория. profileId === null (нет активного профиля —
- * например в тестах) отключает кэш и очередь: чистый pass-through на клиент.
+ * Repository call context. profileId === null (no active profile — e.g. in tests)
+ * disables the cache and the queue: a pure pass-through to the client.
  */
 export interface RepoContext {
   client: PoznoteClient;
@@ -34,7 +34,7 @@ function isNetworkError(e: unknown): boolean {
   return e instanceof Error && e.message === 'network';
 }
 
-/** Отрицательный id = локальная, ещё не созданная на сервере заметка. */
+/** Negative id = a local note not yet created on the server. */
 export function isTempNoteId(id: number): boolean {
   return id < 0;
 }
@@ -43,7 +43,7 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** Поиск/фильтры поверх локального кэша (упрощённая версия серверной логики). */
+/** Search/filters on top of the local cache (a simplified version of the server logic). */
 function filterList(list: NoteListItem[], params: ListNotesFilter): NoteListItem[] {
   let result = list;
   if (params.workspace) result = result.filter((n) => n.workspace === params.workspace);
@@ -65,7 +65,7 @@ function filterList(list: NoteListItem[], params: ListNotesFilter): NoteListItem
   });
 }
 
-/** Обновить элемент списка по данным полной заметки. */
+/** Update a list item from the full note data. */
 function applyNoteToList(list: NoteListItem[], note: CachedNote): void {
   const item = list.find((n) => n.id === note.id);
   if (!item) return;
@@ -77,7 +77,7 @@ function applyNoteToList(list: NoteListItem[], note: CachedNote): void {
   item.workspace = note.workspace;
 }
 
-/** Наложить ожидающие операции на свежий серверный снимок (при онлайн-загрузке). */
+/** Apply pending operations on top of a fresh server snapshot (on online load). */
 function applyPendingToData(data: OfflineData): void {
   for (const op of data.pending) {
     const id = resolveNoteId(data, op.noteId);
@@ -104,7 +104,7 @@ function applyPendingToData(data: OfflineData): void {
       const item = data.notesList.find((n) => n.id === id);
       if (item) item.favorite = op.payload.favorite ?? item.favorite;
     } else if (op.type === 'create') {
-      // созданная оффлайн заметка уже есть в кэше — ничего не делаем
+      // a note created offline is already in the cache — nothing to do
     }
   }
 }
@@ -120,7 +120,7 @@ async function withData(
   return data;
 }
 
-// ===== Чтение =====
+// ===== Reads =====
 
 export async function repoListNotes(
   ctx: RepoContext,
@@ -135,10 +135,10 @@ export async function repoListNotes(
         sort: params.sort,
       });
       ctx.reportSuccess();
-      // В кэш пишем только ПОЛНЫЙ (нефильтрованный) список — иначе оффлайн
-      // останутся видны лишь заметки из текущего фильтра. Отфильтрованные
-      // ответы отдаём как есть, кэш обновится при следующем полном запросе
-      // и при синхронизации (syncNow подтягивает полный список).
+      // Only the FULL (unfiltered) list goes into the cache — otherwise only the
+      // notes from the current filter would remain visible offline. Filtered
+      // responses are returned as is; the cache is refreshed on the next full
+      // request and during sync (syncNow pulls the full list).
       const isFullList = !params.search && params.folder_id === undefined && !params.workspace;
       if (isFullList) {
         const data = await withData(ctx, (d) => {
@@ -151,14 +151,14 @@ export async function repoListNotes(
     } catch (e) {
       if (!isNetworkError(e)) throw e;
       ctx.reportNetworkError();
-      // fallthrough в кэш
+      // fall through to the cache
     }
   }
   if (ctx.profileId) {
     const data = await loadOfflineData(ctx.profileId);
     return { notes: filterList(data.notesList, params), fromCache: true };
   }
-  // нет профиля: прямой вызов (тесты)
+  // no profile: direct call (tests)
   const notes = await ctx.client.listNotes({
     workspace: params.workspace,
     folder_id: params.folder_id,
@@ -177,7 +177,7 @@ export async function repoGetNote(ctx: RepoContext, id: number): Promise<CachedN
       try {
         const fresh = await ctx.client.getNote(resolvedId);
         ctx.reportSuccess();
-        // Не затираем локальные правки, ожидающие синхронизации
+        // Don't overwrite local edits that are waiting to be synced
         const pendingUpdate = data.pending.find(
           (op) => op.type === 'update' && resolveNoteId(data, op.noteId) === resolvedId,
         );
@@ -226,13 +226,13 @@ export async function repoListFolders(
   }
   if (ctx.profileId) {
     const data = await loadOfflineData(ctx.profileId);
-    // у папок нет привязки к workspace в типе — отдаём кэш как есть
+    // folders have no workspace binding in the type — return the cache as is
     return { folders: data.folders, fromCache: true };
   }
   return { folders: await ctx.client.listFolders(workspace), fromCache: false };
 }
 
-// ===== Запись =====
+// ===== Writes =====
 
 export async function repoUpdateNote(
   ctx: RepoContext,
@@ -257,7 +257,7 @@ export async function repoUpdateNote(
             delete details.localUpdatedAt;
             applyNoteToList(d.notesList, details);
           }
-          // локальная правка ушла на сервер — убираем из очереди
+          // the local edit has reached the server — remove it from the queue
           d.pending = d.pending.filter(
             (op) => !(op.type === 'update' && resolveNoteId(d, op.noteId) === resolvedId),
           );
@@ -266,10 +266,10 @@ export async function repoUpdateNote(
       } catch (e) {
         if (!isNetworkError(e)) throw e;
         ctx.reportNetworkError();
-        // fallthrough в оффлайн-запись
+        // fall through to the offline write
       }
     }
-    // Оффлайн: кэш + очередь. Если есть pending create — правки сливаем в него.
+    // Offline: cache + queue. If there is a pending create, merge the edits into it.
     await withData(ctx, (d) => {
       const ts = nowIso();
       const key = String(resolvedId);
@@ -412,7 +412,7 @@ export async function repoDeleteNote(ctx: RepoContext, id: number): Promise<void
       const hadCreate = d.pending.some(
         (op) => op.type === 'create' && resolveNoteId(d, op.noteId) === resolvedId,
       );
-      // удаляем все ожидающие операции по заметке
+      // remove all pending operations for the note
       d.pending = d.pending.filter((op) => resolveNoteId(d, op.noteId) !== resolvedId);
       if (!hadCreate && !isTempNoteId(resolvedId)) {
         d.pending.push({

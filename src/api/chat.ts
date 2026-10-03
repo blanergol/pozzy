@@ -1,6 +1,6 @@
 import { AISettings } from '../storage/settings';
 
-/** Сообщение в wire-формате OpenAI chat/completions (включая tool-сообщения). */
+/** Message in the OpenAI chat/completions wire format (including tool messages). */
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
@@ -20,7 +20,7 @@ export interface ChatToolCall {
   arguments: string;
 }
 
-/** Описание инструмента для function calling (JSON Schema параметров). */
+/** Tool definition for function calling (JSON Schema of the parameters). */
 export interface ChatToolSpec {
   name: string;
   description: string;
@@ -57,7 +57,7 @@ async function postChatCompletion(
   body: Record<string, unknown>,
 ): Promise<ChatCompletionResponse> {
   const baseUrl = settings.baseUrl.replace(/\/+$/, '');
-  // guardrail: запрос не должен висеть вечно
+  // guardrail: the request must not hang forever
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
   let response: Response;
@@ -82,7 +82,7 @@ async function postChatCompletion(
   try {
     data = (await response.json()) as ChatCompletionResponse;
   } catch {
-    // тело не JSON — обработаем ниже по статусу
+    // body is not JSON — handled below based on the status
   }
 
   if (!response.ok) {
@@ -92,8 +92,8 @@ async function postChatCompletion(
 }
 
 /**
- * Один вызов OpenAI-совместимого /chat/completions.
- * При переданных tools модель может вернуть tool_calls вместо текста.
+ * A single call to an OpenAI-compatible /chat/completions.
+ * When tools are passed, the model may return tool_calls instead of text.
  */
 export async function callChatCompletion(
   settings: AISettings,
@@ -119,7 +119,7 @@ export async function callChatCompletion(
   return { content, toolCalls };
 }
 
-/** Простой запрос-ответ без инструментов (обратная совместимость). */
+/** Simple request/response without tools (backward compatibility). */
 export async function sendChatMessage(
   settings: AISettings,
   messages: { role: 'user' | 'assistant' | 'system'; content: string }[],
@@ -130,8 +130,8 @@ export async function sendChatMessage(
 }
 
 /**
- * OCR через vision-модель того же OpenAI-совместимого API, что и чат:
- * картинка уходит base64 в image_url, модель возвращает распознанный текст.
+ * OCR via a vision model of the same OpenAI-compatible API used for chat:
+ * the image is sent as base64 in image_url, the model returns the recognized text.
  */
 export async function extractTextFromImage(
   settings: AISettings,
