@@ -157,7 +157,7 @@ Pozzy never stores a secret or note content on disk in plain text. Secrets live 
 - Encryption at rest protects data on disk and in backups. It does not protect against malware running on an unlocked, rooted or jailbroken device.
 - Attachment files are encrypted in memory in JS, so very large files use noticeable memory while they are queued or uploaded.
 
-Unit tests for this layer live in `src/storage/secure/__tests__/`, `src/storage/__tests__/offlineStore.test.ts` and `src/data/__tests__/attachments.test.ts`. They include a migration run that is interrupted at every single storage operation. The on-device checklist is in [docs/SECURITY-TESTING.md](docs/SECURITY-TESTING.md).
+Unit tests for this layer live in `src/storage/secure/__tests__/`, `src/storage/__tests__/offlineStore.test.ts` and `src/data/__tests__/attachments.test.ts`. They include a migration run that is interrupted at every single storage operation.
 
 ## Getting started
 
@@ -244,7 +244,6 @@ scripts/e2e.js                       — Playwright E2E suite
 docs/openapi.yaml                    — vendored Poznote OpenAPI spec (synced from Poznote 6.107.2-beta)
 docs/API-COVERAGE.md                 — per-endpoint API coverage checklist + history of spec/server discrepancies
 docs/CI-RELEASE.md                   — CI/CD: tests on push/PR, signed APK release on v* tags
-docs/SECURITY-TESTING.md             — manual checklist: secure storage, encryption, upgrade and backups
 ```
 
 ## Troubleshooting
